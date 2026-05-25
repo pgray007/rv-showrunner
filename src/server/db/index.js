@@ -1,0 +1,54 @@
+'use strict';
+const { DatabaseSync } = require('node:sqlite');
+const fs = require('fs');
+const path = require('path');
+
+let db;
+
+const SCHEMA = `
+CREATE TABLE IF NOT EXISTS jobs (
+  id              TEXT PRIMARY KEY,
+  jellyfin_id     TEXT NOT NULL UNIQUE,
+  title           TEXT NOT NULL,
+  year            INTEGER,
+  source_path     TEXT NOT NULL,
+  output_path     TEXT,
+  profile         TEXT NOT NULL,
+  status          TEXT NOT NULL DEFAULT 'queued',
+  ffmpeg_cmd      TEXT,
+  source_mtime    INTEGER,
+  source_size     INTEGER,
+  error_log       TEXT,
+  created_at      INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at      INTEGER NOT NULL DEFAULT (unixepoch()),
+  completed_at    INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS job_logs (
+  id      INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id  TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  ts      INTEGER NOT NULL DEFAULT (unixepoch()),
+  line    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_status     ON jobs(status);
+CREATE INDEX IF NOT EXISTS idx_jobs_jellyfin   ON jobs(jellyfin_id);
+CREATE INDEX IF NOT EXISTS idx_job_logs_job_id ON job_logs(job_id);
+`;
+
+function init(configRoot) {
+  const dbPath = path.join(configRoot, 'rv-showrunner.db');
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  db = new DatabaseSync(dbPath);
+  db.exec('PRAGMA journal_mode = WAL');
+  db.exec('PRAGMA foreign_keys = ON');
+  db.exec(SCHEMA);
+  return db;
+}
+
+function get() {
+  if (!db) throw new Error('DB not initialized');
+  return db;
+}
+
+module.exports = { init, get };

@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>rv-showrunner</Name>
+  <Repository>rv-showrunner:latest</Repository>
+  <Registry/>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support/>
+  <Project/>
+  <Overview>Transcodes Jellyfin-tagged media into RV-ready files for offline playback. Select movies via the web UI, they get transcoded and written to /rv-ready for Syncthing pickup.</Overview>
+  <Category>MediaApp:Video</Category>
+  <WebUI>http://[IP]:[PORT:3000]/</WebUI>
+  <TemplateURL/>
+  <Icon/>
+  <ExtraParams>--device=/dev/dri:/dev/dri --group-add=video --group-add=render</ExtraParams>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+
+  <Config Name="Web UI Port" Target="3000" Default="3000" Mode="tcp" Description="Web UI port" Type="Port" Display="always" Required="true" Mask="false">3000</Config>
+
+  <Config Name="Config" Target="/config" Default="/mnt/user/appdata/rv-showrunner" Mode="rw" Description="Persistent config, database, logs, and profiles" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/rv-showrunner</Config>
+  <Config Name="Media" Target="/media" Default="/mnt/user/Media" Mode="ro" Description="Read-only source media mount (must match Jellyfin's media location)" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/Media</Config>
+  <Config Name="RV Ready Output" Target="/rv-ready" Default="/mnt/user/rv-ready" Mode="rw" Description="Completed transcoded output — point Syncthing here" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/rv-ready</Config>
+  <Config Name="Cache / Working Dir" Target="/cache" Default="/mnt/cache/rv-showrunner" Mode="rw" Description="SSD-backed working directory for in-progress transcodes" Type="Path" Display="always" Required="false" Mask="false">/mnt/cache/rv-showrunner</Config>
+
+  <Config Name="Jellyfin URL" Target="JELLYFIN_URL" Default="http://jellyfin:8096" Mode="" Description="URL of your Jellyfin server" Type="Variable" Display="always" Required="true" Mask="false">http://jellyfin:8096</Config>
+  <Config Name="Jellyfin API Key" Target="JELLYFIN_API_KEY" Default="" Mode="" Description="Jellyfin API key with library read/write access" Type="Variable" Display="always" Required="true" Mask="true"/>
+  <Config Name="RV Tag" Target="RV_TAG" Default="RV-SYNC" Mode="" Description="Jellyfin tag used to mark items for syncing" Type="Variable" Display="always" Required="false" Mask="false">RV-SYNC</Config>
+  <Config Name="Jellyfin Media Path" Target="JELLYFIN_MEDIA_PATH" Default="/mnt/user/Media" Mode="" Description="The path Jellyfin uses for media files on the host (maps to /media in container)" Type="Variable" Display="always" Required="true" Mask="false">/mnt/user/Media</Config>
+  <Config Name="Container Media Root" Target="SOURCE_MEDIA_ROOT" Default="/media" Mode="" Description="Container path for the mounted source media share" Type="Variable" Display="advanced" Required="true" Mask="false">/media</Config>
+  <Config Name="Output Root" Target="OUTPUT_ROOT" Default="/rv-ready" Mode="" Description="Container path for completed RV-ready media" Type="Variable" Display="advanced" Required="true" Mask="false">/rv-ready</Config>
+  <Config Name="Cache Root" Target="CACHE_ROOT" Default="/cache" Mode="" Description="Container path for temporary transcode files" Type="Variable" Display="advanced" Required="true" Mask="false">/cache</Config>
+  <Config Name="Config Root" Target="CONFIG_ROOT" Default="/config" Mode="" Description="Container path for persistent config and database" Type="Variable" Display="advanced" Required="true" Mask="false">/config</Config>
+  <Config Name="Hardware Acceleration" Target="HW_ACCEL" Default="vaapi" Mode="" Description="Hardware acceleration: vaapi, qsv, or none" Type="Variable" Display="always" Required="false" Mask="false">vaapi</Config>
+  <Config Name="Transcode Profile" Target="TRANSCODE_PROFILE" Default="roku-1080p" Mode="" Description="Default transcode profile name (must match a YAML file in /config/profiles/)" Type="Variable" Display="always" Required="false" Mask="false">roku-1080p</Config>
+  <Config Name="Scan Interval (minutes)" Target="SCAN_INTERVAL_MINUTES" Default="10" Mode="" Description="How often to poll Jellyfin for newly tagged items" Type="Variable" Display="advanced" Required="false" Mask="false">10</Config>
+  <Config Name="Max Concurrent Transcodes" Target="MAX_CONCURRENT_TRANSCODES" Default="1" Mode="" Description="Maximum simultaneous ffmpeg processes" Type="Variable" Display="advanced" Required="false" Mask="false">1</Config>
+</Container>

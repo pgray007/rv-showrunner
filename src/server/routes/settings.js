@@ -1,0 +1,170 @@
+'use strict';
+const fs = require('fs');
+const path = require('path');
+const cfg = require('../config');
+const profiles = require('../transcode/profiles');
+const jellyfin = require('../jellyfin/client');
+const ffmpeg = require('../transcode/ffmpeg');
+
+async function routes(fastify) {
+  fastify.get('/settings', async () => {
+    const config = cfg.load();
+    // Never expose the full API key — mask it for display
+    return {
+      ...config,
+      jellyfinApiKey: config.jellyfinApiKey ? '***' + config.jellyfinApiKey.slice(-4) : '',
+      _hasApiKey: !!config.jellyfinApiKey,
+    };
+  });
+
+  fastify.post('/settings', async (req, reply) => {
+    const body = req.body || {};
+    // Strip UI-only fields before persisting
+    const { _hasApiKey, ...clean } = body;
+    // If client echoes back the masked placeholder, preserve the existing key
+    if (clean.jellyfinApiKey && clean.jellyfinApiKey.startsWith('***')) {
+      delete clean.jellyfinApiKey;
+    }
+    const updated = cfg.save(clean);
+    return {
+      ok: true,
+      config: {
+        ...updated,
+        jellyfinApiKey: updated.jellyfinApiKey ? '***' + updated.jellyfinApiKey.slice(-4) : '',
+        _hasApiKey: !!updated.jellyfinApiKey,
+      },
+    };
+  });
+
+  fastify.post('/settings/test-connection', async (req, reply) => {
+    const config = cfg.load();
+    // Allow testing with a freshly provided key before saving
+    const testConfig = { ...config, ...(req.body || {}) };
+    try {
+      const info = await jellyfin.testConnection(testConfig);
+      return { ok: true, serverName: info.ServerName, version: info.Version };
+    } catch (err) {
+      return reply.code(502).send({ ok: false, error: err.message });
+    }
+  });
+
+  fastify.get('/diagnostics/readiness', async () => {
+    const config = cfg.load();
+    const checks = {};
+
+    checks.config = checkWritable(cfg.getConfigRoot());
+    checks.cache = checkWritable(config.cacheRoot);
+    checks.output = checkWritable(config.outputRoot);
+    checks.media = checkReadable(config.sourceMediaRoot);
+
+    try {
+      const profile = profiles.getProfile(config.transcodeProfile);
+      checks.profile = { ok: true, name: profile.name || config.transcodeProfile, container: profile.container };
+    } catch (err) {
+      checks.profile = { ok: false, reason: err.message };
+    }
+
+    try {
+      const info = await jellyfin.testConnection(config, 3000);
+      checks.jellyfin = { ok: true, serverName: info.ServerName, version: info.Version };
+    } catch (err) {
+      checks.jellyfin = { ok: false, reason: err.message };
+    }
+
+    try {
+      const { items } = await jellyfin.getItems({ page: 1, limit: 1 });
+      const item = items[0];
+      if (!item) {
+        checks.pathMapping = { ok: false, reason: 'No movies returned by Jellyfin' };
+      } else if (!item.sourcePath) {
+        checks.pathMapping = { ok: false, reason: 'Jellyfin item did not include a source path' };
+      } else if (!fs.existsSync(item.sourcePath)) {
+        checks.pathMapping = {
+          ok: false,
+          reason: `Mapped path is not readable: ${item.sourcePath}`,
+          jellyfinMediaPath: config.jellyfinMediaPath,
+          sourceMediaRoot: config.sourceMediaRoot,
+        };
+      } else {
+        checks.pathMapping = { ok: true, sampleTitle: item.title, sourcePath: item.sourcePath };
+      }
+    } catch (err) {
+      checks.pathMapping = { ok: false, reason: err.message };
+    }
+
+    checks.gpu = {
+      ok: config.hwAccel === 'none' || fs.existsSync('/dev/dri/renderD128'),
+      device: '/dev/dri/renderD128',
+      hwAccel: config.hwAccel,
+      reason: config.hwAccel !== 'none' && !fs.existsSync('/dev/dri/renderD128') ? 'GPU device is not mounted into the container' : undefined,
+    };
+
+    const required = ['config', 'cache', 'output', 'media', 'profile', 'jellyfin', 'pathMapping'];
+    if (config.hwAccel !== 'none') required.push('gpu');
+    return {
+      ok: required.every((key) => checks[key]?.ok),
+      checks,
+      required,
+    };
+  });
+
+  fastify.post('/diagnostics/ffmpeg-test', async (req, reply) => {
+    const config = cfg.load();
+    try {
+      const profile = profiles.getProfile(config.transcodeProfile);
+      const outputPath = path.join(config.cacheRoot, 'diagnostics', `ffmpeg-test.${profile.container || 'mp4'}`);
+      const result = await ffmpeg.testEncode({
+        outputPath,
+        profile,
+        hwAccel: config.hwAccel,
+        ffmpegPath: config.ffmpegPath,
+      });
+      try { fs.rmSync(outputPath, { force: true }); } catch {}
+      if (!result.ok) return reply.code(502).send(result);
+      return result;
+    } catch (err) {
+      return reply.code(500).send({ ok: false, reason: err.message });
+    }
+  });
+
+  // Profile management
+  fastify.get('/profiles', async () => ({ profiles: profiles.listProfiles() }));
+
+  fastify.post('/profiles', async (req, reply) => {
+    const profile = req.body;
+    if (!profile?.name) return reply.code(400).send({ error: 'name required' });
+    profiles.saveProfile(profile);
+    return { ok: true };
+  });
+
+  fastify.delete('/profiles/:name', async (req, reply) => {
+    const deleted = profiles.deleteProfile(req.params.name);
+    if (!deleted) return reply.code(404).send({ error: 'Profile not found' });
+    return { ok: true };
+  });
+}
+
+function checkReadable(target) {
+  if (!target) return { ok: false, reason: 'not configured' };
+  try {
+    fs.accessSync(target, fs.constants.R_OK);
+    return { ok: true, path: target };
+  } catch (err) {
+    return { ok: false, path: target, reason: err.message };
+  }
+}
+
+function checkWritable(target) {
+  if (!target) return { ok: false, reason: 'not configured' };
+  try {
+    fs.mkdirSync(target, { recursive: true });
+    const probe = path.join(target, `.rv-showrunner-write-test-${process.pid}`);
+    fs.writeFileSync(probe, 'ok');
+    fs.unlinkSync(probe);
+    return { ok: true, path: target };
+  } catch (err) {
+    return { ok: false, path: target, reason: err.message };
+  }
+}
+
+module.exports = routes;

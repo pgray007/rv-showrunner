@@ -1,0 +1,32 @@
+version: "3.8"
+
+services:
+  rv-showrunner:
+    image: rv-showrunner:latest
+    container_name: rv-showrunner
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - /mnt/user/appdata/rv-showrunner:/config
+      - /mnt/user/Media:/media:ro
+      - /mnt/user/rv-ready:/rv-ready
+      - /mnt/cache/rv-showrunner:/cache
+      - /dev/dri:/dev/dri
+    devices:
+      - /dev/dri:/dev/dri
+    environment:
+      - JELLYFIN_URL=http://jellyfin:8096
+      - JELLYFIN_API_KEY=your_api_key_here
+      - RV_TAG=RV-SYNC
+      - SOURCE_MEDIA_ROOT=/media
+      - OUTPUT_ROOT=/rv-ready
+      - CACHE_ROOT=/cache
+      - CONFIG_ROOT=/config
+      - TRANSCODE_PROFILE=roku-1080p
+      - HW_ACCEL=vaapi
+      - SCAN_INTERVAL_MINUTES=10
+      - MAX_CONCURRENT_TRANSCODES=1
+    group_add:
+      - "video"        # required for /dev/dri access
+      - "render"
