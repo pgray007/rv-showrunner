@@ -5,19 +5,20 @@ const db = require('../db');
 const cfg = require('../config');
 const jellyfin = require('../jellyfin/client');
 const queue = require('../transcode/queue');
+const logger = require('../logger');
 
 let timer = null;
 let running = false;
 
 async function scan() {
   if (running) {
-    console.info('[scanner] Previous scan still running, skipping');
-    return;
+    logger.warn('scanner', 'Previous scan still running; skipping');
+    return { ok: false, skipped: true, reason: 'scan already running' };
   }
 
   running = true;
   try {
-    await scanOnce();
+    return await scanOnce();
   } finally {
     running = false;
   }
@@ -25,23 +26,24 @@ async function scan() {
 
 async function scanOnce() {
   const config = cfg.load();
-  console.info('[scanner] Running tag scan...');
+  logger.info('scanner', 'Running tag scan');
 
   let tagged;
   try {
     tagged = await jellyfin.getTaggedItems();
   } catch (err) {
-    console.error('[scanner] Failed to fetch tagged items:', err.message);
-    return;
+    logger.error('scanner', 'Failed to fetch tagged items', err.message);
+    return { ok: false, error: err.message, enqueued: 0, tagged: 0, deleted: 0 };
   }
 
   const taggedIds = new Set(tagged.map((i) => i.jellyfinId));
   let enqueued = 0;
+  let deleted = 0;
 
   // Upsert newly tagged items
   for (const item of tagged) {
     if (!item.sourcePath) {
-      console.warn(`[scanner] No source path for ${item.title} — check JELLYFIN_MEDIA_PATH mapping`);
+      logger.warn('scanner', `No source path for "${item.title}"; check Jellyfin media path mapping`);
       continue;
     }
 
@@ -82,34 +84,39 @@ async function scanOnce() {
         try {
           const dir = require('path').dirname(row.output_path);
           fs.rmSync(dir, { recursive: true, force: true });
-          console.info(`[scanner] Deleted ${dir} (tag removed)`);
+          logger.info('scanner', `Deleted ${dir} because tag was removed`);
         } catch (err) {
-          console.warn(`[scanner] Could not delete ${row.output_path}:`, err.message);
+          logger.warn('scanner', `Could not delete ${row.output_path}`, err.message);
         }
       }
       db.get().prepare("UPDATE jobs SET status='deleted', updated_at=unixepoch() WHERE id=?").run(row.id);
+      deleted++;
     }
   }
 
   if (enqueued > 0) {
-    console.info(`[scanner] Enqueued ${enqueued} new job(s)`);
+    logger.info('scanner', `Enqueued ${enqueued} new job(s)`);
     queue.enqueue();
   } else {
-    console.info('[scanner] No new items');
+    logger.info('scanner', 'No new items');
   }
+  return { ok: true, enqueued, tagged: tagged.length, deleted };
 }
 
 function start(intervalMinutes) {
   const ms = (intervalMinutes || 10) * 60 * 1000;
   if (timer) clearInterval(timer);
   timer = setInterval(() => {
-    scan().catch((err) => console.error('[scanner] Unexpected error:', err));
+    scan().catch((err) => logger.error('scanner', 'Unexpected scan error', err));
   }, ms);
-  console.info(`[scanner] Polling every ${intervalMinutes} minute(s)`);
+  logger.info('scanner', `Polling every ${intervalMinutes} minute(s)`);
 }
 
 function runNow() {
-  scan().catch((err) => console.error('[scanner] Unexpected error:', err));
+  return scan().catch((err) => {
+    logger.error('scanner', 'Unexpected scan error', err);
+    return { ok: false, error: err.message, enqueued: 0, tagged: 0, deleted: 0 };
+  });
 }
 
 function stop() {

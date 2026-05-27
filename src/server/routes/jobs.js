@@ -5,6 +5,8 @@ const crypto = require('crypto');
 const db = require('../db');
 const cfg = require('../config');
 const queue = require('../transcode/queue');
+const scanner = require('../worker/scanner');
+const logger = require('../logger');
 
 async function routes(fastify) {
   // List jobs
@@ -13,14 +15,28 @@ async function routes(fastify) {
     const rows = status && status !== 'all'
       ? db.get().prepare('SELECT * FROM jobs WHERE status=? ORDER BY updated_at DESC').all(status)
       : db.get().prepare('SELECT * FROM jobs ORDER BY updated_at DESC').all();
-    return { jobs: rows };
+    const summaryRows = status && status !== 'all'
+      ? db.get().prepare('SELECT * FROM jobs ORDER BY updated_at DESC').all()
+      : rows;
+    const jobs = rows.map(addRvReadySize);
+    return { jobs, summary: summarizeJobs(summaryRows.map(addRvReadySize)) };
+  });
+
+  // Manually run the Jellyfin tag scan and enqueue any newly tagged items
+  fastify.post('/jobs/refresh', async (req, reply) => {
+    const result = await scanner.runNow();
+    if (!result?.ok) {
+      const status = result?.skipped ? 409 : 502;
+      return reply.code(status).send(result || { ok: false, error: 'refresh failed' });
+    }
+    return result;
   });
 
   // Get single job
   fastify.get('/jobs/:id', async (req, reply) => {
     const job = db.get().prepare('SELECT * FROM jobs WHERE id=?').get(req.params.id);
     if (!job) return reply.code(404).send({ error: 'Not found' });
-    return job;
+    return addRvReadySize(job);
   });
 
   // Get logs for a job (snapshot)
@@ -118,7 +134,7 @@ async function routes(fastify) {
         const dir = path.dirname(job.output_path);
         fs.rmSync(dir, { recursive: true, force: true });
       } catch (err) {
-        console.warn('[jobs] Could not delete output files:', err.message);
+        logger.warn('jobs', 'Could not delete output files', err.message);
       }
     }
 
@@ -136,6 +152,100 @@ async function routes(fastify) {
       files: listOutputFiles(config.outputRoot),
     };
   });
+}
+
+function summarizeJobs(rows) {
+  const active = rows.filter((job) => ['queued', 'transcoding'].includes(job.status));
+  const complete = rows.filter((job) => job.status === 'complete');
+  const total = active.length + complete.length;
+  const pctValues = rows
+    .filter((job) => ['queued', 'transcoding', 'complete'].includes(job.status))
+    .map((job) => job.status === 'complete' ? 100 : Number(job.progress_pct || 0));
+  const overallPct = pctValues.length
+    ? pctValues.reduce((sum, pct) => sum + pct, 0) / pctValues.length
+    : 0;
+  const etaSeconds = rows
+    .filter((job) => job.status === 'transcoding')
+    .reduce((sum, job) => sum + Number(job.eta_seconds || 0), 0);
+  const estimatedQueuedSeconds = estimateQueuedSeconds(rows);
+  const estimatedEtaSeconds = etaSeconds || estimatedQueuedSeconds
+    ? etaSeconds + estimatedQueuedSeconds
+    : null;
+  return {
+    total,
+    active: active.length,
+    queued: rows.filter((job) => job.status === 'queued').length,
+    transcoding: rows.filter((job) => job.status === 'transcoding').length,
+    complete: complete.length,
+    failed: rows.filter((job) => job.status === 'failed').length,
+    overallPct,
+    etaSeconds,
+    estimatedQueuedSeconds,
+    estimatedEtaSeconds,
+    etaEstimated: estimatedQueuedSeconds > 0,
+  };
+}
+
+function estimateQueuedSeconds(rows) {
+  const queued = rows.filter((job) => job.status === 'queued');
+  if (!queued.length) return 0;
+
+  const secondsPerByte = estimateSecondsPerByte(rows);
+  if (secondsPerByte) {
+    const sizedSeconds = queued
+      .filter((job) => Number(job.source_size) > 0)
+      .reduce((sum, job) => sum + (Number(job.source_size) * secondsPerByte), 0);
+    const unsized = queued.filter((job) => !Number(job.source_size)).length;
+    return Math.round(sizedSeconds + (unsized * estimateAverageJobSeconds(rows)));
+  }
+
+  const averageJobSeconds = estimateAverageJobSeconds(rows);
+  return averageJobSeconds ? Math.round(queued.length * averageJobSeconds) : 0;
+}
+
+function estimateSecondsPerByte(rows) {
+  const samples = rows
+    .filter((job) => job.status === 'complete' && job.started_at && job.completed_at && Number(job.source_size) > 0)
+    .map((job) => ({
+      seconds: Math.max(1, Number(job.completed_at) - Number(job.started_at)),
+      bytes: Number(job.source_size),
+    }));
+
+  for (const job of rows.filter((row) => row.status === 'transcoding' && row.started_at && Number(row.progress_pct) > 1 && Number(row.source_size) > 0)) {
+    const elapsed = Math.max(1, Math.floor(Date.now() / 1000) - Number(job.started_at));
+    const projectedSeconds = elapsed / (Number(job.progress_pct) / 100);
+    samples.push({ seconds: projectedSeconds, bytes: Number(job.source_size) });
+  }
+
+  if (!samples.length) return null;
+  const totalSeconds = samples.reduce((sum, sample) => sum + sample.seconds, 0);
+  const totalBytes = samples.reduce((sum, sample) => sum + sample.bytes, 0);
+  return totalBytes > 0 ? totalSeconds / totalBytes : null;
+}
+
+function estimateAverageJobSeconds(rows) {
+  const durations = rows
+    .filter((job) => job.status === 'complete' && job.started_at && job.completed_at)
+    .map((job) => Math.max(1, Number(job.completed_at) - Number(job.started_at)));
+
+  for (const job of rows.filter((row) => row.status === 'transcoding' && row.started_at && Number(row.progress_pct) > 1)) {
+    const elapsed = Math.max(1, Math.floor(Date.now() / 1000) - Number(job.started_at));
+    durations.push(elapsed / (Number(job.progress_pct) / 100));
+  }
+
+  if (!durations.length) return 0;
+  return durations.reduce((sum, seconds) => sum + seconds, 0) / durations.length;
+}
+
+function addRvReadySize(job) {
+  let rvReadySize = null;
+  if (job.output_path) {
+    try {
+      const stat = fs.statSync(job.output_path);
+      if (stat.isFile()) rvReadySize = stat.size;
+    } catch {}
+  }
+  return { ...job, rv_ready_size: rvReadySize };
 }
 
 function getDirSize(dir) {

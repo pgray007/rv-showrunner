@@ -18,6 +18,11 @@ CREATE TABLE IF NOT EXISTS jobs (
   ffmpeg_cmd      TEXT,
   source_mtime    INTEGER,
   source_size     INTEGER,
+  duration_ms     INTEGER,
+  progress_ms     INTEGER,
+  progress_pct    REAL,
+  started_at      INTEGER,
+  eta_seconds     INTEGER,
   error_log       TEXT,
   created_at      INTEGER NOT NULL DEFAULT (unixepoch()),
   updated_at      INTEGER NOT NULL DEFAULT (unixepoch()),
@@ -36,6 +41,14 @@ CREATE INDEX IF NOT EXISTS idx_jobs_jellyfin   ON jobs(jellyfin_id);
 CREATE INDEX IF NOT EXISTS idx_job_logs_job_id ON job_logs(job_id);
 `;
 
+const MIGRATIONS = [
+  ['duration_ms', 'ALTER TABLE jobs ADD COLUMN duration_ms INTEGER'],
+  ['progress_ms', 'ALTER TABLE jobs ADD COLUMN progress_ms INTEGER'],
+  ['progress_pct', 'ALTER TABLE jobs ADD COLUMN progress_pct REAL'],
+  ['started_at', 'ALTER TABLE jobs ADD COLUMN started_at INTEGER'],
+  ['eta_seconds', 'ALTER TABLE jobs ADD COLUMN eta_seconds INTEGER'],
+];
+
 function init(configRoot) {
   const dbPath = path.join(configRoot, 'rv-showrunner.db');
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -43,7 +56,15 @@ function init(configRoot) {
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA foreign_keys = ON');
   db.exec(SCHEMA);
+  migrate();
   return db;
+}
+
+function migrate() {
+  const columns = new Set(db.prepare('PRAGMA table_info(jobs)').all().map((row) => row.name));
+  for (const [column, sql] of MIGRATIONS) {
+    if (!columns.has(column)) db.exec(sql);
+  }
 }
 
 function get() {

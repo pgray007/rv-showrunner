@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useEffect, useState } from 'react';
+import logoUrl from '../logo.png';
 
 const links = [
   { to: '/browse', label: 'Browse' },
@@ -23,7 +24,8 @@ export default function NavBar() {
     <header className="bg-panel border-b border-border sticky top-0 z-50">
       <div className="container mx-auto px-4 max-w-7xl flex items-center gap-6 h-14">
         <span className="font-bold text-white tracking-tight flex items-center gap-2">
-          🚐 RV Showrunner
+          <img src={logoUrl} alt="" className="h-8 w-8 rounded object-cover" />
+          <span>RV Showrunner</span>
         </span>
         <nav className="flex gap-1">
           {links.map(({ to, label }) => (

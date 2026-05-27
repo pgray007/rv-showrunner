@@ -66,23 +66,52 @@ async function testConnection(config, timeoutMs = 10000) {
   return jellyfinFetch('/System/Info', {}, config, timeoutMs);
 }
 
-async function getItems({ search, page = 1, limit = 40, tagFilter } = {}) {
+async function getItems({
+  search,
+  page = 1,
+  limit = 40,
+  tagFilter,
+  excludeTagFilter,
+  genre,
+  sortBy = 'SortName',
+  sortOrder = 'Ascending',
+} = {}) {
+  const config = cfg.load();
+  const params = new URLSearchParams({
+    IncludeItemTypes: 'Movie',
+    Recursive: 'true',
+    SortBy: sortBy,
+    SortOrder: sortOrder,
+    Fields: 'Path,MediaSources,Tags,Overview,Genres,Studios,ProviderIds,ImageTags,BackdropImageTags,OfficialRating,CommunityRating,CriticRating,DateCreated,PremiereDate',
+    StartIndex: String((page - 1) * limit),
+    Limit: String(limit),
+  });
+  if (search) params.set('SearchTerm', search);
+  if (tagFilter) params.set('Tags', tagFilter);
+  if (excludeTagFilter) params.set('ExcludeTags', excludeTagFilter);
+  if (genre) params.set('Genres', genre);
+
+  const data = await jellyfinFetch(`/Items?${params}`, {}, config);
+  return {
+    items: (data.Items || []).map((item) => normalizeItem(item, config)),
+    total: data.TotalRecordCount || 0,
+  };
+}
+
+async function getGenres() {
   const config = cfg.load();
   const params = new URLSearchParams({
     IncludeItemTypes: 'Movie',
     Recursive: 'true',
     SortBy: 'SortName',
     SortOrder: 'Ascending',
-    Fields: 'Path,MediaSources,Tags,Overview,Genres,Studios,ProviderIds,ImageTags,BackdropImageTags',
-    StartIndex: String((page - 1) * limit),
-    Limit: String(limit),
   });
-  if (search) params.set('SearchTerm', search);
-  if (tagFilter) params.set('Tags', tagFilter);
-
-  const data = await jellyfinFetch(`/Items?${params}`, {}, config);
+  const data = await jellyfinFetch(`/Genres?${params}`, {}, config);
   return {
-    items: (data.Items || []).map((item) => normalizeItem(item, config)),
+    genres: (data.Items || []).map((genre) => ({
+      id: genre.Id,
+      name: genre.Name,
+    })),
     total: data.TotalRecordCount || 0,
   };
 }
@@ -114,7 +143,7 @@ async function getTaggedItems() {
 async function getItem(jellyfinId) {
   const config = cfg.load();
   const params = new URLSearchParams({
-    Fields: 'Path,MediaSources,Tags,Overview,Genres,Studios,ProviderIds,ImageTags,BackdropImageTags',
+    Fields: 'Path,MediaSources,Tags,Overview,Genres,Studios,ProviderIds,ImageTags,BackdropImageTags,OfficialRating,CommunityRating,CriticRating,DateCreated,PremiereDate',
   });
   const item = await jellyfinFetch(`/Items/${jellyfinId}?${params}`, {}, config);
   return normalizeItem(item, config);
@@ -169,6 +198,11 @@ function normalizeItem(item, config) {
     title: item.Name,
     year: item.ProductionYear,
     overview: item.Overview,
+    officialRating: item.OfficialRating,
+    communityRating: item.CommunityRating,
+    criticRating: item.CriticRating,
+    dateCreated: item.DateCreated,
+    premiereDate: item.PremiereDate,
     runtime: item.RunTimeTicks ? Math.round(item.RunTimeTicks / 600000000) : null,
     genres: item.Genres || [],
     studios: (item.Studios || []).map((s) => s.Name),
@@ -185,4 +219,4 @@ function normalizeItem(item, config) {
   };
 }
 
-module.exports = { testConnection, getItems, getTaggedItems, getItem, addTag, removeTag, downloadImage };
+module.exports = { testConnection, getItems, getGenres, getTaggedItems, getItem, addTag, removeTag, downloadImage };

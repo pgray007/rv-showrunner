@@ -24,6 +24,14 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
 
+ENV CONFIG_ROOT=/config \
+    SOURCE_MEDIA_ROOT=/media \
+    OUTPUT_ROOT=/rv-ready \
+    CACHE_ROOT=/cache \
+    HW_DEVICE=/dev/dri/renderD128 \
+    FFMPEG_PATH=/usr/bin/ffmpeg \
+    PORT=3000
+
 COPY --from=client-builder /app/dist ./dist
 COPY src/server ./src/server
 COPY profiles ./profiles

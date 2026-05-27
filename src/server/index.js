@@ -2,12 +2,14 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const fastify = require('fastify')({ logger: { level: 'info' } });
+const fastify = require('fastify')({ logger: false });
 
 const cfg = require('./config');
 const db = require('./db');
 const queue = require('./transcode/queue');
 const scanner = require('./worker/scanner');
+const logger = require('./logger');
+const pkg = require('../../package.json');
 
 const DIST_PATH = path.join(__dirname, '../../dist');
 
@@ -15,7 +17,9 @@ async function start() {
   const config = cfg.load();
   db.init(cfg.getConfigRoot());
 
-  // Reset any jobs stuck in transcoding from a previous crash
+  normalizeCompletedJobs();
+
+  // Reset any remaining jobs stuck in transcoding from a previous crash
   db.get()
     .prepare("UPDATE jobs SET status='queued', updated_at=unixepoch() WHERE status='transcoding'")
     .run();
@@ -55,7 +59,7 @@ async function start() {
 
   const port = parseInt(process.env.PORT || '3000', 10);
   await fastify.listen({ port, host: '0.0.0.0' });
-  fastify.log.info(`rv-showrunner listening on :${port} (static: ${distExists ? 'yes' : 'no — dev mode'})`);
+  logger.info('server', `rv-showrunner ${pkg.version} listening on :${port} (static: ${distExists ? 'yes' : 'no - dev mode'})`);
 
   queue.start(config.maxConcurrentTranscodes);
   scanner.start(config.scanIntervalMinutes);
@@ -63,10 +67,24 @@ async function start() {
 }
 
 process.on('unhandledRejection', (reason) => {
-  console.error('[unhandledRejection]', reason);
+  logger.error('server', 'Unhandled rejection', reason);
 });
 
 start().catch((err) => {
-  console.error(err);
+  logger.error('server', 'Startup failed', err);
   process.exit(1);
 });
+
+function normalizeCompletedJobs() {
+  db.get().prepare(`
+    UPDATE jobs
+    SET status='complete',
+        progress_pct=100,
+        eta_seconds=0,
+        progress_ms=COALESCE(progress_ms, duration_ms),
+        completed_at=COALESCE(completed_at, updated_at),
+        updated_at=unixepoch()
+    WHERE status='complete'
+       OR (status='transcoding' AND output_path IS NOT NULL)
+  `).run();
+}

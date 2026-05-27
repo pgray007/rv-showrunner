@@ -13,8 +13,8 @@
   <Category>MediaApp:Video</Category>
   <WebUI>http://[IP]:[PORT:3000]/</WebUI>
   <TemplateURL/>
-  <Icon/>
-  <ExtraParams>--device=/dev/dri:/dev/dri --group-add=video --group-add=render</ExtraParams>
+  <Icon>https://raw.githubusercontent.com/pgray007/rv-showrunner/main/src/client/logo.png</Icon>
+  <ExtraParams>--device=/dev/dri:/dev/dri</ExtraParams>
   <PostArgs/>
   <CPUset/>
   <DateInstalled/>
@@ -37,7 +37,8 @@
   <Config Name="Output Root" Target="OUTPUT_ROOT" Default="/rv-ready" Mode="" Description="Container path for completed RV-ready media" Type="Variable" Display="advanced" Required="true" Mask="false">/rv-ready</Config>
   <Config Name="Cache Root" Target="CACHE_ROOT" Default="/cache" Mode="" Description="Container path for temporary transcode files" Type="Variable" Display="advanced" Required="true" Mask="false">/cache</Config>
   <Config Name="Config Root" Target="CONFIG_ROOT" Default="/config" Mode="" Description="Container path for persistent config and database" Type="Variable" Display="advanced" Required="true" Mask="false">/config</Config>
-  <Config Name="Hardware Acceleration" Target="HW_ACCEL" Default="vaapi" Mode="" Description="Hardware acceleration: vaapi, qsv, or none" Type="Variable" Display="always" Required="false" Mask="false">vaapi</Config>
+  <Config Name="Hardware Acceleration" Target="HW_ACCEL" Default="vaapi" Mode="" Description="Hardware acceleration: vaapi or none" Type="Variable" Display="always" Required="false" Mask="false">vaapi</Config>
+  <Config Name="Hardware Device" Target="HW_DEVICE" Default="/dev/dri/renderD128" Mode="" Description="Default Intel render device. The web UI can discover and save another renderD device." Type="Variable" Display="advanced" Required="false" Mask="false">/dev/dri/renderD128</Config>
   <Config Name="Transcode Profile" Target="TRANSCODE_PROFILE" Default="roku-1080p" Mode="" Description="Default transcode profile name (must match a YAML file in /config/profiles/)" Type="Variable" Display="always" Required="false" Mask="false">roku-1080p</Config>
   <Config Name="Scan Interval (minutes)" Target="SCAN_INTERVAL_MINUTES" Default="10" Mode="" Description="How often to poll Jellyfin for newly tagged items" Type="Variable" Display="advanced" Required="false" Mask="false">10</Config>
   <Config Name="Max Concurrent Transcodes" Target="MAX_CONCURRENT_TRANSCODES" Default="1" Mode="" Description="Maximum simultaneous ffmpeg processes" Type="Variable" Display="advanced" Required="false" Mask="false">1</Config>

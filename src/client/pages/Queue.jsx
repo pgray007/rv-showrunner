@@ -16,12 +16,43 @@ function fmtDate(ts) {
   return new Date(ts * 1000).toLocaleString();
 }
 
+function fmtDuration(seconds) {
+  if (!seconds && seconds !== 0) return '—';
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  if (minutes < 60) return `${minutes}m ${secs}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
+function pct(job) {
+  if (job.status === 'complete') return 100;
+  return Math.max(0, Math.min(100, Number(job.progress_pct || 0)));
+}
+
+function progressColor(value) {
+  return value >= 100 ? 'bg-emerald-500' : 'bg-yellow-400';
+}
+
+function progressLabel(job) {
+  if (job.status === 'complete') return 'Complete';
+  if (job.eta_seconds) return `ETA ${fmtDuration(job.eta_seconds)}`;
+  if (job.duration_ms) {
+    return `${fmtDuration(Math.round((job.progress_ms || 0) / 1000))} / ${fmtDuration(Math.round(job.duration_ms / 1000))}`;
+  }
+  return 'Running';
+}
+
 export default function Queue() {
   const [jobs, setJobs] = useState([]);
+  const [summary, setSummary] = useState(null);
   const [filter, setFilter] = useState('all');
   const [expanded, setExpanded] = useState(null);
   const [logs, setLogs] = useState({});
   const [retrying, setRetrying] = useState({});
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshResult, setRefreshResult] = useState(null);
   const [pruning, setPruning] = useState(false);
   const [pruneResult, setPruneResult] = useState(null);
   const logRefs = useRef({});
@@ -29,7 +60,10 @@ export default function Queue() {
 
   function load() {
     const params = filter !== 'all' ? `?status=${filter}` : '';
-    fetch(`/api/jobs${params}`).then((r) => r.json()).then((d) => setJobs(d.jobs || []));
+    fetch(`/api/jobs${params}`).then((r) => r.json()).then((d) => {
+      setJobs(d.jobs || []);
+      setSummary(d.summary || null);
+    });
   }
 
   useEffect(() => {
@@ -86,6 +120,19 @@ export default function Queue() {
     load();
   }
 
+  async function refreshQueue() {
+    setRefreshing(true);
+    setRefreshResult(null);
+    try {
+      const res = await fetch('/api/jobs/refresh', { method: 'POST' });
+      const data = await res.json().catch(() => ({ ok: false, error: 'Invalid API response' }));
+      setRefreshResult(data);
+      load();
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   async function pruneLogs() {
     setPruning(true);
     setPruneResult(null);
@@ -117,14 +164,42 @@ export default function Queue() {
           ))}
         </div>
         <span className="text-sm text-gray-500">{jobs.length} jobs</span>
-        <button className="btn-secondary text-xs ml-auto" onClick={pruneLogs} disabled={pruning}>
+        <button className="btn-secondary text-xs ml-auto" onClick={refreshQueue} disabled={refreshing}>
+          {refreshing ? 'Refreshing...' : 'Refresh queue'}
+        </button>
+        <button className="btn-secondary text-xs" onClick={pruneLogs} disabled={pruning}>
           {pruning ? 'Pruning…' : 'Prune Logs'}
         </button>
+        {refreshResult && (
+          <span className={`text-xs ${refreshResult.ok ? 'text-gray-500' : 'text-red-400'}`}>
+            {refreshResult.ok
+              ? `${refreshResult.enqueued || 0} added${refreshResult.deleted ? `, ${refreshResult.deleted} removed` : ''}`
+              : refreshResult.reason || refreshResult.error || 'refresh failed'}
+          </span>
+        )}
         {pruneResult && <span className="text-xs text-gray-500">{pruneResult.deleted || 0} removed</span>}
       </div>
 
       {jobs.length === 0 && (
         <div className="text-gray-500 text-sm card p-8 text-center">No jobs yet — browse and tag movies to get started.</div>
+      )}
+
+      {summary && summary.total > 0 && (
+        <div className="card p-4 space-y-2">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-gray-300">Overall progress</span>
+            <span className="text-gray-500">
+              {summary.complete}/{summary.total} complete
+              {summary.estimatedEtaSeconds ? ` · ETA ${fmtDuration(summary.estimatedEtaSeconds)}${summary.etaEstimated ? ' est.' : ''}` : ''}
+            </span>
+          </div>
+          <div className="h-2 rounded bg-surface overflow-hidden">
+            <div
+              className={`h-full ${progressColor(summary.overallPct || 0)} transition-all`}
+              style={{ width: `${Math.round(summary.overallPct || 0)}%` }}
+            />
+          </div>
+        </div>
       )}
 
       <div className="space-y-2">
@@ -146,10 +221,26 @@ export default function Queue() {
                     <span className="text-xs text-gray-600 truncate max-w-xs">{job.output_path}</span>
                   )}
                 </div>
+                {['transcoding', 'complete'].includes(job.status) && (
+                  <div className="mt-3 max-w-xl">
+                    <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                      <span>{pct(job).toFixed(job.status === 'complete' ? 0 : 1)}%</span>
+                      <span>{progressLabel(job)}</span>
+                    </div>
+                    <div className="h-1.5 rounded bg-surface overflow-hidden">
+                      <div className={`h-full ${progressColor(pct(job))} transition-all`} style={{ width: `${pct(job)}%` }} />
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="text-right flex-shrink-0 text-xs text-gray-500 space-y-1">
                 <div>{fmtDate(job.updated_at)}</div>
-                {job.source_size && <div>{fmtBytes(job.source_size)}</div>}
+                <div>
+                  <span className="text-gray-600">Source size:</span> {fmtBytes(job.source_size)}
+                </div>
+                <div>
+                  <span className="text-gray-600">RV-ready size:</span> {fmtBytes(job.rv_ready_size)}
+                </div>
               </div>
               <div className="flex gap-1 flex-shrink-0">
                 {['failed', 'cancelled'].includes(job.status) && (

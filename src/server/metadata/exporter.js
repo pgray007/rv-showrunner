@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const jellyfin = require('../jellyfin/client');
+const logger = require('../logger');
 
 function escapeXml(str) {
   if (!str) return '';
@@ -43,7 +44,7 @@ async function exportMovie(job, destDir, config) {
   try {
     itemData = await jellyfin.getItem(job.jellyfin_id);
   } catch (err) {
-    console.warn(`[metadata] Could not fetch item data for ${job.jellyfin_id}: ${err.message}`);
+    logger.warn('metadata', `Could not fetch item data for ${job.jellyfin_id}`, err.message);
     return;
   }
 
@@ -56,7 +57,7 @@ async function exportMovie(job, destDir, config) {
     try {
       await jellyfin.downloadImage(job.jellyfin_id, 'Primary', path.join(destDir, 'poster.jpg'));
     } catch (err) {
-      console.warn(`[metadata] Could not download poster for ${job.jellyfin_id}: ${err.message}`);
+      logger.warn('metadata', `Could not download poster for ${job.jellyfin_id}`, err.message);
     }
   }
 
@@ -65,7 +66,7 @@ async function exportMovie(job, destDir, config) {
     try {
       await jellyfin.downloadImage(job.jellyfin_id, 'Backdrop', path.join(destDir, 'fanart.jpg'));
     } catch (err) {
-      console.warn(`[metadata] Could not download fanart for ${job.jellyfin_id}: ${err.message}`);
+      logger.warn('metadata', `Could not download fanart for ${job.jellyfin_id}`, err.message);
     }
   }
 }

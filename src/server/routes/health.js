@@ -32,11 +32,13 @@ async function routes(fastify) {
     checks.cache = checkMount(config.cacheRoot, true);
 
     // GPU
-    const dri = '/dev/dri/renderD128';
+    const hardware = queue.getHardwareState();
     checks.gpu = {
-      ok: fs.existsSync(dri),
-      device: dri,
-      hwAccelMode: queue.getHwAccelMode(),
+      ok: config.hwAccel === 'none' || fs.existsSync(config.hwDevice),
+      device: config.hwDevice,
+      hwAccelMode: hardware.activeMode,
+      activeDevice: hardware.activeDevice,
+      reloadPending: hardware.reloadPending,
     };
 
     // ffmpeg

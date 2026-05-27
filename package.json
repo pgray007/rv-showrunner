@@ -1,6 +1,6 @@
 {
   "name": "rv-showrunner",
-  "version": "0.1.0",
+  "version": "0.98-pre",
   "private": true,
   "scripts": {
     "dev:server": "node --watch-path=src/server src/server/index.js",

@@ -3,11 +3,30 @@ const cfg = require('../config');
 const jf = require('../jellyfin/client');
 const db = require('../db');
 
+const SORT_OPTIONS = {
+  title: { sortBy: 'SortName', sortOrder: 'Ascending' },
+  newest: { sortBy: 'DateCreated', sortOrder: 'Descending' },
+};
+
 async function routes(fastify) {
   // Browse / search movies
   fastify.get('/jellyfin/items', async (req) => {
-    const { search, page = 1, limit = 40 } = req.query;
-    const { items, total } = await jf.getItems({ search, page: Number(page), limit: Number(limit) });
+    const { search, page = 1, limit = 40, tagState = 'all', sort = 'title', genre = '' } = req.query;
+    const config = cfg.load();
+    const filters = tagState === 'tagged'
+      ? { tagFilter: config.rvTag }
+      : tagState === 'untagged'
+        ? { excludeTagFilter: config.rvTag }
+        : {};
+    const sortOption = SORT_OPTIONS[sort] || SORT_OPTIONS.title;
+    const { items, total } = await jf.getItems({
+      search,
+      page: Number(page),
+      limit: Number(limit),
+      genre,
+      ...sortOption,
+      ...filters,
+    });
 
     // Annotate with job status from DB
     const jellyfinIds = items.map((i) => i.jellyfinId);
@@ -25,6 +44,8 @@ async function routes(fastify) {
       limit: Number(limit),
     };
   });
+
+  fastify.get('/jellyfin/genres', async () => jf.getGenres());
 
   // Add RV tag
   fastify.post('/jellyfin/items/:id/tag', async (req, reply) => {
