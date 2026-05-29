@@ -14,6 +14,12 @@ const BLANK_PROFILE = {
   audioBitrate: '192k',
   audioChannels: 2,
   subtitleMode: 'burn-forced-only',
+  tonemapMode: 'auto',
+  tonemapAlgorithm: 'hable',
+  audioSelectionMode: 'smart',
+  preferredAudioLanguages: ['eng', 'en'],
+  preferDefaultAudio: true,
+  ignoreCommentaryAudio: true,
 };
 
 export default function Settings() {
@@ -97,6 +103,10 @@ export default function Settings() {
 
   function profileField(key, value) {
     setProfileDraft((profile) => ({ ...profile, [key]: value }));
+  }
+
+  function languageValue(value) {
+    return Array.isArray(value) ? value.join(', ') : value || '';
   }
 
   async function saveProfileDraft() {
@@ -356,6 +366,41 @@ export default function Settings() {
                   <option value="none">None</option>
                 </select>
               </div>
+              <div>
+                <label className="label">HDR Tonemapping</label>
+                <select className="input" value={profileDraft.tonemapMode || 'auto'} disabled={profileReadOnly} onChange={(e) => profileField('tonemapMode', e.target.value)}>
+                  <option value="auto">Auto</option>
+                  <option value="always">Always</option>
+                  <option value="none">None</option>
+                </select>
+              </div>
+              <div>
+                <label className="label">Tonemap Algorithm</label>
+                <select className="input" value={profileDraft.tonemapAlgorithm || 'hable'} disabled={profileReadOnly} onChange={(e) => profileField('tonemapAlgorithm', e.target.value)}>
+                  <option value="hable">hable</option>
+                  <option value="mobius">mobius</option>
+                  <option value="reinhard">reinhard</option>
+                </select>
+              </div>
+              <div>
+                <label className="label">Audio Selection</label>
+                <select className="input" value={profileDraft.audioSelectionMode || 'smart'} disabled={profileReadOnly} onChange={(e) => profileField('audioSelectionMode', e.target.value)}>
+                  <option value="smart">Smart</option>
+                  <option value="first">First track</option>
+                </select>
+              </div>
+              <div>
+                <label className="label">Preferred Audio Languages</label>
+                <input className="input" value={languageValue(profileDraft.preferredAudioLanguages)} disabled={profileReadOnly} onChange={(e) => profileField('preferredAudioLanguages', e.target.value.split(',').map((item) => item.trim()).filter(Boolean))} placeholder="eng, en" />
+              </div>
+              <label className="flex items-center gap-2 text-sm text-gray-300">
+                <input type="checkbox" checked={profileDraft.preferDefaultAudio !== false} disabled={profileReadOnly} onChange={(e) => profileField('preferDefaultAudio', e.target.checked)} />
+                Prefer default audio track
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-300">
+                <input type="checkbox" checked={profileDraft.ignoreCommentaryAudio !== false} disabled={profileReadOnly} onChange={(e) => profileField('ignoreCommentaryAudio', e.target.checked)} />
+                Ignore commentary tracks
+              </label>
             </div>
 
             {profileError && <div className="text-sm text-red-400">{profileError}</div>}

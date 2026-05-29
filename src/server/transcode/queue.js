@@ -37,6 +37,7 @@ function setStatus(jobId, status, extra = {}) {
   if ('progress_ms' in extra) { fields.push('progress_ms=?'); values.push(extra.progress_ms); }
   if ('progress_pct' in extra) { fields.push('progress_pct=?'); values.push(extra.progress_pct); }
   if ('eta_seconds' in extra) { fields.push('eta_seconds=?'); values.push(extra.eta_seconds); }
+  if ('transcode_info' in extra) { fields.push('transcode_info=?'); values.push(extra.transcode_info); }
   if (status === 'transcoding') { fields.push('started_at=unixepoch()'); }
   if (status === 'complete') {
     fields.push('completed_at=unixepoch()', 'progress_pct=100', 'eta_seconds=0');
@@ -92,6 +93,7 @@ async function processJob(job) {
       ffmpegPath: config.ffmpegPath,
       onLog: (line) => onLog(job.id, line),
       onProgress: (progress) => updateProgress(job.id, progress),
+      onTranscodeInfo: (info) => setStatus(job.id, 'transcoding', { transcode_info: JSON.stringify(info) }),
       signal: controller.signal,
     });
 
@@ -134,10 +136,12 @@ async function getDurationMs(job, ffmpegPath) {
 }
 
 function updateProgress(jobId, progress, durationMs) {
+  const reportedDurationMs = parseDurationMs(progress);
+  if (reportedDurationMs) setDurationIfTranscoding(jobId, reportedDurationMs);
   const outTimeMs = parseProgressMs(progress);
   if (!Number.isFinite(outTimeMs) || outTimeMs <= 0) return;
   const job = db.get().prepare('SELECT started_at, duration_ms FROM jobs WHERE id=?').get(jobId);
-  durationMs = durationMs || job?.duration_ms || null;
+  durationMs = durationMs || reportedDurationMs || job?.duration_ms || null;
   const elapsed = job?.started_at ? Math.max(1, Math.floor(Date.now() / 1000) - job.started_at) : null;
   const progressPct = durationMs ? Math.min(99.9, Math.max(0, (outTimeMs / durationMs) * 100)) : null;
   const etaSeconds = elapsed && progressPct && progressPct > 0
@@ -148,6 +152,18 @@ function updateProgress(jobId, progress, durationMs) {
     SET progress_ms=?, progress_pct=?, eta_seconds=?, updated_at=unixepoch()
     WHERE id=?
   `).run(Math.round(outTimeMs), progressPct, etaSeconds, jobId);
+}
+
+function parseDurationMs(progress) {
+  if (progress.duration_ms) {
+    const value = Number(progress.duration_ms);
+    if (Number.isFinite(value) && value > 0) return Math.round(value);
+  }
+  if (progress.duration) {
+    const value = parseTimestampMs(progress.duration);
+    if (value) return value;
+  }
+  return null;
 }
 
 function parseProgressMs(progress) {

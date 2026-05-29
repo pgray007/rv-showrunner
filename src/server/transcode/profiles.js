@@ -103,6 +103,12 @@ function validateProfile(profile) {
     audioBitrate: String(profile.audioBitrate || '').trim(),
     audioChannels: Number(profile.audioChannels),
     subtitleMode: String(profile.subtitleMode || 'burn-forced-only').trim(),
+    tonemapMode: String(profile.tonemapMode || 'auto').trim(),
+    tonemapAlgorithm: String(profile.tonemapAlgorithm || 'hable').trim(),
+    audioSelectionMode: String(profile.audioSelectionMode || 'smart').trim(),
+    preferredAudioLanguages: normalizeLanguageList(profile.preferredAudioLanguages || ['eng', 'en']),
+    preferDefaultAudio: profile.preferDefaultAudio !== false,
+    ignoreCommentaryAudio: profile.ignoreCommentaryAudio !== false,
   };
 
   assertValidName(clean.name);
@@ -110,6 +116,9 @@ function validateProfile(profile) {
   if (clean.videoCodec !== 'h264') throw new Error('Only h264 video profiles are currently supported');
   if (clean.audioCodec !== 'aac') throw new Error('Only aac audio profiles are currently supported');
   if (!['burn-forced-only', 'none'].includes(clean.subtitleMode)) throw new Error('Unsupported subtitle mode');
+  if (!['auto', 'always', 'none'].includes(clean.tonemapMode)) throw new Error('Unsupported tonemap mode');
+  if (!['hable', 'mobius', 'reinhard'].includes(clean.tonemapAlgorithm)) throw new Error('Unsupported tonemap algorithm');
+  if (!['smart', 'first'].includes(clean.audioSelectionMode)) throw new Error('Unsupported audio selection mode');
 
   for (const key of ['maxWidth', 'maxHeight']) {
     if (!Number.isInteger(clean[key]) || clean[key] < 16 || clean[key] > 7680) {
@@ -127,6 +136,14 @@ function validateProfile(profile) {
   }
 
   return clean;
+}
+
+function normalizeLanguageList(value) {
+  const list = Array.isArray(value) ? value : String(value || '').split(',');
+  return list
+    .map((item) => String(item || '').trim().toLowerCase())
+    .filter(Boolean)
+    .slice(0, 12);
 }
 
 function assertValidName(name) {

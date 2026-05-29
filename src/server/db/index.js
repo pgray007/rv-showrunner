@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   progress_pct    REAL,
   started_at      INTEGER,
   eta_seconds     INTEGER,
+  transcode_info  TEXT,
   error_log       TEXT,
   created_at      INTEGER NOT NULL DEFAULT (unixepoch()),
   updated_at      INTEGER NOT NULL DEFAULT (unixepoch()),
@@ -47,6 +48,7 @@ const MIGRATIONS = [
   ['progress_pct', 'ALTER TABLE jobs ADD COLUMN progress_pct REAL'],
   ['started_at', 'ALTER TABLE jobs ADD COLUMN started_at INTEGER'],
   ['eta_seconds', 'ALTER TABLE jobs ADD COLUMN eta_seconds INTEGER'],
+  ['transcode_info', 'ALTER TABLE jobs ADD COLUMN transcode_info TEXT'],
 ];
 
 function init(configRoot) {

@@ -44,6 +44,29 @@ function progressLabel(job) {
   return 'Running';
 }
 
+function toneLabel(info) {
+  const tone = info?.tonemap;
+  if (!tone) return 'Pending';
+  if (tone.applied) {
+    if (tone.engine === 'vaapi') return 'Applied Intel VAAPI';
+    const engine = tone.engine === 'software' ? 'software' : null;
+    return [`Applied ${tone.algorithm || ''}`.trim(), engine].filter(Boolean).join(' · ');
+  }
+  return tone.hdrDetected ? 'Skipped' : 'Not needed';
+}
+
+function audioLabel(info) {
+  const audio = info?.audio;
+  if (!audio) return 'Pending';
+  const parts = [
+    audio.language && audio.language !== 'unknown' ? audio.language : null,
+    audio.title || null,
+    audio.default ? 'default' : null,
+    audio.commentary ? 'commentary' : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(' · ') : audio.selectedIndex !== null && audio.selectedIndex !== undefined ? `stream ${audio.selectedIndex}` : 'No audio';
+}
+
 export default function Queue() {
   const [jobs, setJobs] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -51,6 +74,7 @@ export default function Queue() {
   const [expanded, setExpanded] = useState(null);
   const [logs, setLogs] = useState({});
   const [retrying, setRetrying] = useState({});
+  const [reprocessing, setReprocessing] = useState({});
   const [refreshing, setRefreshing] = useState(false);
   const [refreshResult, setRefreshResult] = useState(null);
   const [pruning, setPruning] = useState(false);
@@ -105,6 +129,17 @@ export default function Queue() {
       load();
     } finally {
       setRetrying((r) => ({ ...r, [job.id]: false }));
+    }
+  }
+
+  async function reprocess(job) {
+    if (!confirm(`Delete the completed output for "${job.title}" and reprocess it?`)) return;
+    setReprocessing((r) => ({ ...r, [job.id]: true }));
+    try {
+      await fetch(`/api/jobs/${job.id}/reprocess`, { method: 'POST' });
+      load();
+    } finally {
+      setReprocessing((r) => ({ ...r, [job.id]: false }));
     }
   }
 
@@ -260,6 +295,15 @@ export default function Queue() {
                     Cancel
                   </button>
                 )}
+                {job.status === 'complete' && (
+                  <button
+                    className="btn-secondary text-xs"
+                    onClick={(e) => { e.stopPropagation(); reprocess(job); }}
+                    disabled={reprocessing[job.id]}
+                  >
+                    {reprocessing[job.id] ? '…' : 'Reprocess'}
+                  </button>
+                )}
                 {['complete', 'failed', 'cancelled', 'deleted'].includes(job.status) && (
                   <button
                     className="btn-ghost text-xs text-red-400 hover:text-red-300"
@@ -279,6 +323,31 @@ export default function Queue() {
                     {job.error_log}
                   </div>
                 )}
+                <div className="grid gap-3 border-b border-border bg-surface/40 p-3 text-xs text-gray-400 sm:grid-cols-2">
+                  <div>
+                    <div className="text-gray-500">HDR to SDR tonemapping</div>
+                    <div className="mt-1 text-gray-200">{toneLabel(job.transcode_info)}</div>
+                    {job.transcode_info?.tonemap?.reason && (
+                      <div className="mt-1">{job.transcode_info.tonemap.reason}</div>
+                    )}
+                    {job.transcode_info?.tonemap?.engineReason && (
+                      <div className="mt-1">{job.transcode_info.tonemap.engineReason}</div>
+                    )}
+                    {job.transcode_info?.tonemap?.hardwareAccelerationDisabled && (
+                      <div className="mt-1 text-yellow-300">Software filtering for this job</div>
+                    )}
+                  </div>
+                  <div>
+                    <div className="text-gray-500">Audio selection</div>
+                    <div className="mt-1 text-gray-200">{audioLabel(job.transcode_info)}</div>
+                    {job.transcode_info?.audio?.reason && (
+                      <div className="mt-1">{job.transcode_info.audio.reason}</div>
+                    )}
+                    {job.transcode_info?.audio?.codec && (
+                      <div className="mt-1">{job.transcode_info.audio.codec}{job.transcode_info.audio.channels ? ` · ${job.transcode_info.audio.channels} ch` : ''}</div>
+                    )}
+                  </div>
+                </div>
                 <div
                   ref={(el) => { logRefs.current[job.id] = el; }}
                   className="p-3 bg-black/40 text-xs font-mono text-gray-400 max-h-64 overflow-y-auto space-y-0.5"

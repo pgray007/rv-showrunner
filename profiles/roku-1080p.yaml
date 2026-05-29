@@ -10,3 +10,11 @@ bufsize: 12M
 audioBitrate: 192k
 audioChannels: 2
 subtitleMode: burn-forced-only
+tonemapMode: auto
+tonemapAlgorithm: hable
+audioSelectionMode: smart
+preferredAudioLanguages:
+  - eng
+  - en
+preferDefaultAudio: true
+ignoreCommentaryAudio: true

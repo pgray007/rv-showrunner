@@ -83,9 +83,39 @@ async function routes(fastify) {
   fastify.post('/jobs/:id/retry', async (req, reply) => {
     const job = db.get().prepare("SELECT * FROM jobs WHERE id=? AND status IN ('failed','cancelled')").get(req.params.id);
     if (!job) return reply.code(404).send({ error: 'Job not found or not retryable' });
-    db.get().prepare("UPDATE jobs SET status='queued', error_log=NULL, updated_at=unixepoch() WHERE id=?").run(job.id);
+    db.get().prepare("UPDATE jobs SET status='queued', error_log=NULL, transcode_info=NULL, updated_at=unixepoch() WHERE id=?").run(job.id);
     queue.enqueue();
     return { ok: true };
+  });
+
+  // Delete completed output and re-run the transcode
+  fastify.post('/jobs/:id/reprocess', async (req, reply) => {
+    const job = db.get().prepare("SELECT * FROM jobs WHERE id=? AND status='complete'").get(req.params.id);
+    if (!job) return reply.code(404).send({ error: 'Job not found or not complete' });
+
+    const deleted = deleteOutputForJob(job);
+    db.get().prepare(`
+      UPDATE jobs
+      SET status='queued',
+          output_path=NULL,
+          ffmpeg_cmd=NULL,
+          duration_ms=NULL,
+          progress_ms=NULL,
+          progress_pct=NULL,
+          started_at=NULL,
+          eta_seconds=NULL,
+          error_log=NULL,
+          transcode_info=NULL,
+          completed_at=NULL,
+          updated_at=unixepoch()
+      WHERE id=?
+    `).run(job.id);
+    db.get().prepare('INSERT INTO job_logs (job_id, ts, line) VALUES (?, unixepoch(), ?)').run(
+      job.id,
+      deleted ? '[queue] Reprocess requested; deleted completed output and requeued job' : '[queue] Reprocess requested; no completed output file was present, requeued job',
+    );
+    queue.enqueue();
+    return { ok: true, deleted };
   });
 
   // Cancel an active job
@@ -129,14 +159,7 @@ async function routes(fastify) {
     if (!job) return reply.code(404).send({ error: 'Not found' });
 
     const deleteFiles = req.query.deleteFiles === 'true';
-    if (deleteFiles && job.output_path) {
-      try {
-        const dir = path.dirname(job.output_path);
-        fs.rmSync(dir, { recursive: true, force: true });
-      } catch (err) {
-        logger.warn('jobs', 'Could not delete output files', err.message);
-      }
-    }
+    if (deleteFiles) deleteOutputForJob(job);
 
     db.get().prepare('DELETE FROM jobs WHERE id=?').run(job.id);
     return { ok: true };
@@ -152,6 +175,18 @@ async function routes(fastify) {
       files: listOutputFiles(config.outputRoot),
     };
   });
+}
+
+function deleteOutputForJob(job) {
+  if (!job.output_path) return false;
+  try {
+    const dir = path.dirname(job.output_path);
+    fs.rmSync(dir, { recursive: true, force: true });
+    return true;
+  } catch (err) {
+    logger.warn('jobs', 'Could not delete output files', err.message);
+    return false;
+  }
 }
 
 function summarizeJobs(rows) {
@@ -245,7 +280,17 @@ function addRvReadySize(job) {
       if (stat.isFile()) rvReadySize = stat.size;
     } catch {}
   }
-  return { ...job, rv_ready_size: rvReadySize };
+  return { ...job, rv_ready_size: rvReadySize, transcode_info: parseTranscodeInfo(job.transcode_info) };
+}
+
+function parseTranscodeInfo(value) {
+  if (!value) return null;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
 }
 
 function getDirSize(dir) {

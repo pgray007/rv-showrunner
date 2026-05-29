@@ -10,14 +10,16 @@ RUN npm run build
 # Stage 2: runtime
 FROM node:24-slim AS runtime
 
-RUN echo "deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware" > /etc/apt/sources.list \
+RUN sed -i 's/Components: main/Components: main contrib non-free non-free-firmware/g' /etc/apt/sources.list.d/debian.sources \
  && apt-get update \
  && apt-get install -y --no-install-recommends \
       curl \
       ffmpeg \
       libva2 \
       libva-drm2 \
-      intel-media-va-driver-non-free \
+ && if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+      apt-get install -y --no-install-recommends intel-media-va-driver-non-free; \
+    fi \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
