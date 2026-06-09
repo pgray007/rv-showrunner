@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const db = require('../db');
 const cfg = require('../config');
-const jellyfin = require('../jellyfin/client');
+const mediaSource = require('../media/source');
 const queue = require('../transcode/queue');
 const logger = require('../logger');
 
@@ -26,30 +26,32 @@ async function scan() {
 
 async function scanOnce() {
   const config = cfg.load();
-  logger.info('scanner', 'Running tag scan');
+  const source = mediaSource.getActive(config);
+  logger.info('scanner', `Running ${source.label} tag scan`);
 
   let tagged;
   try {
-    tagged = await jellyfin.getTaggedItems();
+    tagged = await source.client.getTaggedItems();
   } catch (err) {
     logger.error('scanner', 'Failed to fetch tagged items', err.message);
     return { ok: false, error: err.message, enqueued: 0, tagged: 0, deleted: 0 };
   }
 
-  const taggedIds = new Set(tagged.map((i) => i.jellyfinId));
+  const taggedIds = new Set(tagged.map((i) => sourceItemId(i)));
   let enqueued = 0;
   let deleted = 0;
 
   // Upsert newly tagged items
   for (const item of tagged) {
     if (!item.sourcePath) {
-      logger.warn('scanner', `No source path for "${item.title}"; check Jellyfin media path mapping`);
+      logger.warn('scanner', `No source path for "${item.title}"; check ${source.label} media path mapping`);
       continue;
     }
 
+    const itemId = sourceItemId(item);
     const existing = db.get()
-      .prepare('SELECT id, status FROM jobs WHERE jellyfin_id=?')
-      .get(item.jellyfinId);
+      .prepare('SELECT id, status FROM jobs WHERE source_type=? AND source_item_id=?')
+      .get(source.type, itemId);
 
     if (!existing) {
       let sourceMtime = null;
@@ -61,10 +63,11 @@ async function scanOnce() {
       } catch {}
 
       const jobId = crypto.randomUUID();
+      const legacyId = source.type === 'jellyfin' ? itemId : `${source.type}:${itemId}`;
       db.get().prepare(`
-        INSERT INTO jobs (id, jellyfin_id, title, year, source_path, profile, status, source_mtime, source_size)
-        VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?)
-      `).run(jobId, item.jellyfinId, item.title, item.year || null, item.sourcePath, config.transcodeProfile, sourceMtime, sourceSize);
+        INSERT INTO jobs (id, jellyfin_id, source_type, source_item_id, title, year, source_path, profile, status, source_mtime, source_size)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)
+      `).run(jobId, legacyId, source.type, itemId, item.title, item.year || null, item.sourcePath, config.transcodeProfile, sourceMtime, sourceSize);
       enqueued++;
     } else if (existing.status === 'deleted') {
       // Re-tagged after deletion — reset to queued
@@ -75,11 +78,11 @@ async function scanOnce() {
 
   // Handle items that lost their tag
   const tracked = db.get()
-    .prepare("SELECT id, jellyfin_id, output_path FROM jobs WHERE status NOT IN ('failed','skipped','deleted','cancelled')")
-    .all();
+    .prepare("SELECT id, jellyfin_id, source_type, source_item_id, output_path FROM jobs WHERE source_type=? AND status NOT IN ('failed','skipped','deleted','cancelled')")
+    .all(source.type);
 
   for (const row of tracked) {
-    if (!taggedIds.has(row.jellyfin_id)) {
+    if (!taggedIds.has(row.source_item_id || row.jellyfin_id)) {
       if (config.unsyncBehavior === 'delete' && row.output_path) {
         try {
           const dir = require('path').dirname(row.output_path);
@@ -101,6 +104,10 @@ async function scanOnce() {
     logger.info('scanner', 'No new items');
   }
   return { ok: true, enqueued, tagged: tagged.length, deleted };
+}
+
+function sourceItemId(item) {
+  return String(item.sourceItemId || item.id || item.jellyfinId);
 }
 
 function start(intervalMinutes) {

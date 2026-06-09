@@ -6,3 +6,4 @@ data/
 *.db-wal
 .env
 UNRAID_TESTING.md
+.DS_Store

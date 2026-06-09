@@ -3,12 +3,12 @@ const fs = require('fs');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const cfg = require('../config');
-const jellyfin = require('../jellyfin/client');
+const mediaSource = require('../media/source');
 const queue = require('../transcode/queue');
 
 const VERSION = require('../../../package.json').version;
 const execFileAsync = promisify(execFile);
-const JELLYFIN_HEALTH_TIMEOUT_MS = 2000;
+const SOURCE_HEALTH_TIMEOUT_MS = 2000;
 const FFMPEG_HEALTH_TIMEOUT_MS = 2000;
 
 async function routes(fastify) {
@@ -18,12 +18,13 @@ async function routes(fastify) {
     const config = cfg.load();
     const checks = {};
 
-    // Jellyfin connectivity
+    // Active source connectivity
     try {
-      await jellyfin.testConnection(config, JELLYFIN_HEALTH_TIMEOUT_MS);
-      checks.jellyfin = { ok: true };
+      const source = mediaSource.getActive(config);
+      await source.client.testConnection(config, SOURCE_HEALTH_TIMEOUT_MS);
+      checks.source = { ok: true, type: source.type, label: source.label };
     } catch (err) {
-      checks.jellyfin = { ok: false, reason: err.message };
+      checks.source = { ok: false, reason: err.message };
     }
 
     // Mount checks

@@ -11,9 +11,13 @@ const SETTINGS_PATH = path.join(CONFIG_ROOT, 'settings.json');
 const LEGACY_CONFIG_PATH = path.join(CONFIG_ROOT, 'config.json');
 
 const PERSISTED_KEYS = new Set([
+  'mediaSource',
   'jellyfinUrl',
   'jellyfinApiKey',
   'jellyfinMediaPath',
+  'plexUrl',
+  'plexToken',
+  'plexMediaPath',
   'rvTag',
   'sourceMediaRoot',
   'outputRoot',
@@ -28,9 +32,13 @@ const PERSISTED_KEYS = new Set([
 ]);
 
 const envDefaults = {
+  mediaSource: process.env.MEDIA_SOURCE || 'jellyfin',
   jellyfinUrl: process.env.JELLYFIN_URL || '',
   jellyfinApiKey: process.env.JELLYFIN_API_KEY || '',
   jellyfinMediaPath: process.env.JELLYFIN_MEDIA_PATH || '/mnt/user/Media',
+  plexUrl: process.env.PLEX_URL || '',
+  plexToken: process.env.PLEX_TOKEN || '',
+  plexMediaPath: process.env.PLEX_MEDIA_PATH || '/mnt/user/Media',
   rvTag: process.env.RV_TAG || 'RV-SYNC',
   sourceMediaRoot: process.env.SOURCE_MEDIA_ROOT || path.join(DEV_DATA, 'media'),
   outputRoot: process.env.OUTPUT_ROOT || path.join(DEV_DATA, 'rv-ready'),
@@ -68,6 +76,9 @@ function sanitize(values) {
   }
   if (['qsv', 'qsvDerived', 'qsvViaVaapi'].includes(clean.hwAccel)) {
     clean.hwAccel = 'vaapi';
+  }
+  if (clean.mediaSource && !['jellyfin', 'plex'].includes(clean.mediaSource)) {
+    clean.mediaSource = 'jellyfin';
   }
   return clean;
 }

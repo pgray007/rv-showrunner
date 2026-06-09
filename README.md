@@ -2,11 +2,11 @@
 
 rv-showrunner prepares media for a disconnected mobile media server. It is built for setups like an RV, camper, boat, cabin, or any other place where you want your media library to keep working when internet access is slow, metered, or unavailable.
 
-The app connects to Jellyfin, watches for media tagged for RV sync, transcodes those files into a smaller device-friendly format, and writes the finished files to an output folder that can be synced to a mobile server with Syncthing.
+The app connects to Jellyfin or Plex, watches for media tagged for RV sync, transcodes those files into a smaller device-friendly format, and writes the finished files to an output folder that can be synced to a mobile server with Syncthing.
 
 ## What It Does
 
-- Scans Jellyfin for movies tagged with a configurable tag, default `RV-SYNC`.
+- Scans Jellyfin or Plex for movies tagged or labeled with a configurable value, default `RV-SYNC`.
 - Transcodes selected media into an RV-ready output profile, default `roku-1080p`.
 - Writes completed files to `/rv-ready` for pickup by Syncthing.
 - Keeps source media mounted read-only.
@@ -18,7 +18,7 @@ The app connects to Jellyfin, watches for media tagged for RV sync, transcodes t
 
 rv-showrunner is intended to be one part of a larger disconnected media setup:
 
-1. A home media server running Jellyfin with access to your main media library.
+1. A home media server running Jellyfin or Plex with access to your main media library.
 2. rv-showrunner running near that library, usually on the same Docker host or Unraid server.
 3. Syncthing syncing rv-showrunner's finished `/rv-ready` output to a mobile device.
 4. A mobile Jellyfin server, recommended on a Raspberry Pi or similar low-power computer.
@@ -31,8 +31,8 @@ This creates a "sync in the driveway, watch offline on the road" workflow.
 ## Requirements
 
 - Docker or Unraid.
-- A Jellyfin server for the source library.
-- A Jellyfin API key.
+- A Jellyfin or Plex server for the source library.
+- A Jellyfin API key or Plex token.
 - Source media available to the container.
 - An output folder for RV-ready media.
 - Enough cache space for active transcodes.
@@ -40,7 +40,7 @@ This creates a "sync in the driveway, watch offline on the road" workflow.
 
 ## Docker Hub Install
 
-Replace paths with locations from your host. The source media mount should match the path Jellyfin reports for media files through `JELLYFIN_MEDIA_PATH`.
+Replace paths with locations from your host. The source media mount should match the path your selected media server reports for files through `JELLYFIN_MEDIA_PATH` or `PLEX_MEDIA_PATH`.
 
 ```yaml
 services:
@@ -58,9 +58,13 @@ services:
     devices:
       - /dev/dri:/dev/dri
     environment:
+      - MEDIA_SOURCE=jellyfin
       - JELLYFIN_URL=http://jellyfin:8096
       - JELLYFIN_API_KEY=your_api_key_here
       - JELLYFIN_MEDIA_PATH=/mnt/user/Media
+      - PLEX_URL=http://plex:32400
+      - PLEX_TOKEN=your_plex_token_here
+      - PLEX_MEDIA_PATH=/mnt/user/Media
       - RV_TAG=RV-SYNC
       - SOURCE_MEDIA_ROOT=/media
       - OUTPUT_ROOT=/rv-ready
@@ -99,27 +103,31 @@ If your Docker Hub image is published under a different namespace, change `pgray
    - **Media**: read-only mount for your source media.
    - **RV Ready Output**: completed files for Syncthing.
    - **Cache / Working Dir**: temporary working space for transcodes.
-5. Set the required Jellyfin values:
-   - **Jellyfin URL**
-   - **Jellyfin API Key**
-   - **Jellyfin Media Path**
+5. Choose one active source, Jellyfin or Plex, and set its connection values:
+   - **Media Source**
+   - **Jellyfin URL**, **Jellyfin API Key**, and **Jellyfin Media Path**
+   - or **Plex URL**, **Plex Token**, and **Plex Media Path**
    - **RV Tag**, default `RV-SYNC`
 6. If using Intel hardware acceleration, pass through `/dev/dri` and keep `HW_ACCEL=vaapi`.
 7. Start the container and open the web UI from the Unraid Docker page.
 
 The Unraid template expects source media at `/media`, output at `/rv-ready`, cache at `/cache`, and config at `/config` inside the container.
 
-## Jellyfin Setup
+## Media Source Setup
 
-Create a Jellyfin API key from the Jellyfin admin dashboard and provide it as `JELLYFIN_API_KEY`.
+Set `MEDIA_SOURCE` to `jellyfin` or `plex`, or choose the active source from Settings.
 
-Tag media that should be prepared for the RV with the configured tag, default:
+For Jellyfin, create an API key from the Jellyfin admin dashboard and provide it as `JELLYFIN_API_KEY`.
+
+For Plex, provide the Plex Media Server URL and a token with access to the source library as `PLEX_URL` and `PLEX_TOKEN`.
+
+Tag or label media that should be prepared for the RV with the configured value, default:
 
 ```text
 RV-SYNC
 ```
 
-rv-showrunner scans Jellyfin on a timer, finds tagged items, and queues any new work. The scan interval defaults to 10 minutes.
+rv-showrunner scans the selected source on a timer, finds tagged or labeled items, and queues any new work. The scan interval defaults to 10 minutes.
 
 ## Syncthing Setup
 
@@ -140,10 +148,14 @@ Common environment variables:
 
 | Variable | Default | Description |
 | --- | --- | --- |
+| `MEDIA_SOURCE` | `jellyfin` | Active source, either `jellyfin` or `plex`. |
 | `JELLYFIN_URL` | empty | URL for the source Jellyfin server. |
 | `JELLYFIN_API_KEY` | empty | Jellyfin API key. |
 | `JELLYFIN_MEDIA_PATH` | `/mnt/user/Media` | Host path Jellyfin uses for source media. |
-| `RV_TAG` | `RV-SYNC` | Jellyfin tag used to select media. |
+| `PLEX_URL` | empty | URL for the source Plex Media Server. |
+| `PLEX_TOKEN` | empty | Plex token. |
+| `PLEX_MEDIA_PATH` | `/mnt/user/Media` | Host path Plex uses for source media. |
+| `RV_TAG` | `RV-SYNC` | Jellyfin tag or Plex label used to select media. |
 | `SOURCE_MEDIA_ROOT` | `/media` | Container path for source media. |
 | `OUTPUT_ROOT` | `/rv-ready` | Container path for completed files. |
 | `CACHE_ROOT` | `/cache` | Container path for temporary transcode files. |
@@ -151,7 +163,7 @@ Common environment variables:
 | `TRANSCODE_PROFILE` | `roku-1080p` | Active transcode profile. |
 | `HW_ACCEL` | `none` | Hardware acceleration mode, usually `vaapi` or `none`. |
 | `HW_DEVICE` | `/dev/dri/renderD128` | VAAPI render device. |
-| `SCAN_INTERVAL_MINUTES` | `10` | Jellyfin polling interval. |
+| `SCAN_INTERVAL_MINUTES` | `10` | Source polling interval. |
 | `MAX_CONCURRENT_TRANSCODES` | `1` | Maximum active ffmpeg jobs. |
 
 Most settings can also be managed from the web UI after first start.

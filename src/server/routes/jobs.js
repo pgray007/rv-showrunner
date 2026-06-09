@@ -22,7 +22,7 @@ async function routes(fastify) {
     return { jobs, summary: summarizeJobs(summaryRows.map(addRvReadySize)) };
   });
 
-  // Manually run the Jellyfin tag scan and enqueue any newly tagged items
+  // Manually run the active source scan and enqueue any newly tagged/labeled items
   fastify.post('/jobs/refresh', async (req, reply) => {
     const result = await scanner.runNow();
     if (!result?.ok) {

@@ -26,7 +26,8 @@ export default function Browse() {
   const [filter, setFilter] = useState('all'); // all | tagged | untagged
   const [sort, setSort] = useState('title');
   const [genre, setGenre] = useState('');
-  const [tagging, setTagging] = useState({}); // jellyfinId → true
+  const [tagging, setTagging] = useState({});
+  const [sourceLabel, setSourceLabel] = useState('media server');
   const searchTimeout = useRef(null);
 
   function load(q, p, f = filter, s = sort, g = genre) {
@@ -37,12 +38,13 @@ export default function Browse() {
     if (f !== 'all') params.set('tagState', f);
     if (s !== 'title') params.set('sort', s);
     if (g) params.set('genre', g);
-    fetch(`/api/jellyfin/items?${params}`)
+    fetch(`/api/media/items?${params}`)
       .then((r) => r.json())
       .then((data) => {
         if (data.error) { setError(data.error); setItems([]); setTotal(0); return; }
         setItems(data.items || []);
         setTotal(data.total || 0);
+        setSourceLabel(data.sourceLabel || 'media server');
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -53,7 +55,7 @@ export default function Browse() {
   }, [page]);
 
   useEffect(() => {
-    fetch('/api/jellyfin/genres')
+    fetch('/api/media/genres')
       .then((r) => r.json())
       .then((data) => setGenres(data.genres || []))
       .catch(() => setGenres([]));
@@ -87,17 +89,18 @@ export default function Browse() {
   }
 
   async function toggleTag(item) {
-    setTagging((t) => ({ ...t, [item.jellyfinId]: true }));
+    const id = itemId(item);
+    setTagging((t) => ({ ...t, [id]: true }));
     try {
       if (item.hasRvTag) {
-        await fetch(`/api/jellyfin/items/${item.jellyfinId}/tag`, { method: 'DELETE' });
+        await fetch(`/api/media/items/${encodeURIComponent(id)}/tag`, { method: 'DELETE' });
       } else {
-        await fetch(`/api/jellyfin/items/${item.jellyfinId}/tag`, { method: 'POST' });
+        await fetch(`/api/media/items/${encodeURIComponent(id)}/tag`, { method: 'POST' });
       }
       setItems((prev) =>
         prev
           .map((i) =>
-            i.jellyfinId === item.jellyfinId ? { ...i, hasRvTag: !i.hasRvTag } : i
+            itemId(i) === id ? { ...i, hasRvTag: !i.hasRvTag } : i
           )
           .filter((i) => {
             if (filter === 'tagged') return i.hasRvTag;
@@ -109,7 +112,7 @@ export default function Browse() {
         setTotal((t) => Math.max(0, t - 1));
       }
     } finally {
-      setTagging((t) => ({ ...t, [item.jellyfinId]: false }));
+      setTagging((t) => ({ ...t, [id]: false }));
     }
   }
 
@@ -171,9 +174,9 @@ export default function Browse() {
       {loading && <div className="text-gray-500 text-sm">Loading…</div>}
       {!loading && error && (
         <div className="card p-4 text-sm text-red-400 space-y-1">
-          <p className="font-medium">Could not reach Jellyfin</p>
+          <p className="font-medium">Could not reach {sourceLabel}</p>
           <p className="text-red-500/70">{error}</p>
-          <p className="text-gray-500">Check your Jellyfin URL and API key in <a href="/settings" className="text-accent hover:underline">Settings</a>.</p>
+          <p className="text-gray-500">Check your {sourceLabel} connection in <a href="/settings" className="text-accent hover:underline">Settings</a>.</p>
         </div>
       )}
 
@@ -182,11 +185,11 @@ export default function Browse() {
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
         {items.map((item) => (
           <MovieCard
-            key={item.jellyfinId}
+            key={itemId(item)}
             item={item}
             onSelect={() => setSelectedItem(item)}
             onToggle={() => toggleTag(item)}
-            toggling={!!tagging[item.jellyfinId]}
+            toggling={!!tagging[itemId(item)]}
           />
         ))}
       </div>
@@ -198,6 +201,10 @@ export default function Browse() {
       )}
     </div>
   );
+}
+
+function itemId(item) {
+  return String(item.sourceItemId || item.id || item.jellyfinId);
 }
 
 function Pagination({ page, totalPages, onPrev, onNext }) {

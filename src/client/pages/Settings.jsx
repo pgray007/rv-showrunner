@@ -193,10 +193,21 @@ export default function Settings() {
     setTesting(true);
     setTestResult(null);
     try {
+      const payload = config.mediaSource === 'plex'
+        ? {
+            mediaSource: 'plex',
+            plexUrl: config.plexUrl,
+            plexToken: config._hasPlexToken && config.plexToken.startsWith('***') ? undefined : config.plexToken,
+          }
+        : {
+            mediaSource: 'jellyfin',
+            jellyfinUrl: config.jellyfinUrl,
+            jellyfinApiKey: config._hasApiKey && config.jellyfinApiKey.startsWith('***') ? undefined : config.jellyfinApiKey,
+          };
       const res = await fetch('/api/settings/test-connection', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jellyfinUrl: config.jellyfinUrl, jellyfinApiKey: config._hasApiKey && config.jellyfinApiKey.startsWith('***') ? undefined : config.jellyfinApiKey }),
+        body: JSON.stringify(payload),
       });
       let data;
       const text = await res.text();
@@ -224,22 +235,50 @@ export default function Settings() {
         <span className="text-xs text-gray-500">Version {config.appVersion || '0.98-pre'}</span>
       </div>
 
-      {/* Jellyfin */}
+      {/* Media Source */}
       <section className="card p-6 space-y-4">
-        <h2 className="font-medium text-gray-200">Jellyfin Connection</h2>
+        <h2 className="font-medium text-gray-200">Media Source</h2>
         <div>
-          <label className="label">Server URL</label>
-          <input className="input" value={config.jellyfinUrl || ''} onChange={(e) => field('jellyfinUrl', e.target.value)} placeholder="http://jellyfin:8096" />
+          <label className="label">Active Source</label>
+          <select className="input" value={config.mediaSource || 'jellyfin'} onChange={(e) => { field('mediaSource', e.target.value); setTestResult(null); }}>
+            <option value="jellyfin">Jellyfin</option>
+            <option value="plex">Plex</option>
+          </select>
         </div>
-        <div>
-          <label className="label">API Key</label>
-          <input className="input" type="password" value={config.jellyfinApiKey || ''} onChange={(e) => field('jellyfinApiKey', e.target.value)} placeholder={config._hasApiKey ? '(saved)' : 'Paste API key'} />
-        </div>
-        <div>
-          <label className="label">Jellyfin Media Path (host path Jellyfin uses)</label>
-          <input className="input" value={config.jellyfinMediaPath || ''} onChange={(e) => field('jellyfinMediaPath', e.target.value)} placeholder="/mnt/user/Media" />
-          <p className="text-xs text-gray-500 mt-1">Use the Folder path from Jellyfin Libraries -&gt; Manage library.</p>
-        </div>
+
+        {(config.mediaSource || 'jellyfin') === 'jellyfin' ? (
+          <>
+            <div>
+              <label className="label">Server URL</label>
+              <input className="input" value={config.jellyfinUrl || ''} onChange={(e) => field('jellyfinUrl', e.target.value)} placeholder="http://jellyfin:8096" />
+            </div>
+            <div>
+              <label className="label">API Key</label>
+              <input className="input" type="password" value={config.jellyfinApiKey || ''} onChange={(e) => field('jellyfinApiKey', e.target.value)} placeholder={config._hasApiKey ? '(saved)' : 'Paste API key'} />
+            </div>
+            <div>
+              <label className="label">Jellyfin Media Path (host path Jellyfin uses)</label>
+              <input className="input" value={config.jellyfinMediaPath || ''} onChange={(e) => field('jellyfinMediaPath', e.target.value)} placeholder="/mnt/user/Media" />
+              <p className="text-xs text-gray-500 mt-1">Use the Folder path from Jellyfin Libraries -&gt; Manage library.</p>
+            </div>
+          </>
+        ) : (
+          <>
+            <div>
+              <label className="label">Server URL</label>
+              <input className="input" value={config.plexUrl || ''} onChange={(e) => field('plexUrl', e.target.value)} placeholder="http://plex:32400" />
+            </div>
+            <div>
+              <label className="label">Token</label>
+              <input className="input" type="password" value={config.plexToken || ''} onChange={(e) => field('plexToken', e.target.value)} placeholder={config._hasPlexToken ? '(saved)' : 'Paste Plex token'} />
+            </div>
+            <div>
+              <label className="label">Plex Media Path (host path Plex uses)</label>
+              <input className="input" value={config.plexMediaPath || ''} onChange={(e) => field('plexMediaPath', e.target.value)} placeholder="/mnt/user/Media" />
+              <p className="text-xs text-gray-500 mt-1">Use the file path Plex reports for movies in your library.</p>
+            </div>
+          </>
+        )}
         <div className="flex items-center gap-3">
           <button className="btn-secondary" onClick={testConnection} disabled={testing}>
             {testing ? 'Testing…' : 'Test Connection'}

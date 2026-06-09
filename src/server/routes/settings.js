@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const cfg = require('../config');
 const profiles = require('../transcode/profiles');
-const jellyfin = require('../jellyfin/client');
+const mediaSource = require('../media/source');
 const ffmpeg = require('../transcode/ffmpeg');
 const queue = require('../transcode/queue');
 const pkg = require('../../../package.json');
@@ -15,7 +15,9 @@ async function routes(fastify) {
     return {
       ...config,
       jellyfinApiKey: config.jellyfinApiKey ? '***' + config.jellyfinApiKey.slice(-4) : '',
+      plexToken: config.plexToken ? '***' + config.plexToken.slice(-4) : '',
       _hasApiKey: !!config.jellyfinApiKey,
+      _hasPlexToken: !!config.plexToken,
       appVersion: pkg.version,
     };
   });
@@ -26,9 +28,7 @@ async function routes(fastify) {
     // Strip UI-only fields before persisting
     const { _hasApiKey, checks, required, ok, version, ...clean } = body;
     // If client echoes back the masked placeholder, preserve the existing key
-    if (clean.jellyfinApiKey && clean.jellyfinApiKey.startsWith('***')) {
-      delete clean.jellyfinApiKey;
-    }
+    stripMaskedSecrets(clean);
     const updated = cfg.save(clean);
     const hardwareChanged = previous.hwAccel !== updated.hwAccel ||
       previous.hwDevice !== updated.hwDevice ||
@@ -42,7 +42,9 @@ async function routes(fastify) {
       config: {
         ...updated,
         jellyfinApiKey: updated.jellyfinApiKey ? '***' + updated.jellyfinApiKey.slice(-4) : '',
+        plexToken: updated.plexToken ? '***' + updated.plexToken.slice(-4) : '',
         _hasApiKey: !!updated.jellyfinApiKey,
+        _hasPlexToken: !!updated.plexToken,
         appVersion: pkg.version,
       },
     };
@@ -51,9 +53,12 @@ async function routes(fastify) {
   fastify.post('/settings/test-connection', async (req, reply) => {
     const config = cfg.load();
     // Allow testing with a freshly provided key before saving
-    const testConfig = { ...config, ...(req.body || {}) };
+    const clean = { ...(req.body || {}) };
+    stripMaskedSecrets(clean);
+    const testConfig = { ...config, ...clean };
     try {
-      const info = await jellyfin.testConnection(testConfig);
+      const source = mediaSource.getActive(testConfig);
+      const info = await source.client.testConnection(testConfig);
       return { ok: true, serverName: info.ServerName, version: info.Version };
     } catch (err) {
       return reply.code(502).send({ ok: false, error: err.message });
@@ -77,24 +82,27 @@ async function routes(fastify) {
     }
 
     try {
-      const info = await jellyfin.testConnection(config, 3000);
-      checks.jellyfin = { ok: true, serverName: info.ServerName, version: info.Version };
+      const source = mediaSource.getActive(config);
+      const info = await source.client.testConnection(config, 3000);
+      checks.source = { ok: true, type: source.type, label: source.label, serverName: info.ServerName, version: info.Version };
     } catch (err) {
-      checks.jellyfin = { ok: false, reason: err.message };
+      checks.source = { ok: false, reason: err.message };
     }
 
     try {
-      const { items } = await jellyfin.getItems({ page: 1, limit: 1 });
+      const source = mediaSource.getActive(config);
+      const { items } = await source.client.getItems({ page: 1, limit: 1 });
       const item = items[0];
       if (!item) {
-        checks.pathMapping = { ok: false, reason: 'No movies returned by Jellyfin' };
+        checks.pathMapping = { ok: false, reason: `No movies returned by ${source.label}` };
       } else if (!item.sourcePath) {
-        checks.pathMapping = { ok: false, reason: 'Jellyfin item did not include a source path' };
+        checks.pathMapping = { ok: false, reason: `${source.label} item did not include a source path` };
       } else if (!fs.existsSync(item.sourcePath)) {
         checks.pathMapping = {
           ok: false,
           reason: `Mapped path is not readable: ${item.sourcePath}`,
           jellyfinMediaPath: config.jellyfinMediaPath,
+          plexMediaPath: config.plexMediaPath,
           sourceMediaRoot: config.sourceMediaRoot,
         };
       } else {
@@ -114,7 +122,7 @@ async function routes(fastify) {
       reason: config.hwAccel !== 'none' && !fs.existsSync(config.hwDevice) ? 'GPU device is not mounted into the container' : undefined,
     };
 
-    const required = ['config', 'cache', 'output', 'media', 'profile', 'jellyfin', 'pathMapping'];
+    const required = ['config', 'cache', 'output', 'media', 'profile', 'source', 'pathMapping'];
     if (config.hwAccel !== 'none') required.push('gpu');
     return {
       ok: required.every((key) => checks[key]?.ok),
@@ -217,10 +225,15 @@ function readTrimmed(file) {
 
 function mergeTestConfig(config, body) {
   const { _hasApiKey, ...clean } = body || {};
-  if (clean.jellyfinApiKey && clean.jellyfinApiKey.startsWith('***')) {
-    delete clean.jellyfinApiKey;
-  }
+  stripMaskedSecrets(clean);
   return { ...config, ...clean };
+}
+
+function stripMaskedSecrets(clean) {
+  if (clean.jellyfinApiKey && clean.jellyfinApiKey.startsWith('***')) delete clean.jellyfinApiKey;
+  if (clean.plexToken && clean.plexToken.startsWith('***')) delete clean.plexToken;
+  delete clean._hasApiKey;
+  delete clean._hasPlexToken;
 }
 
 function checkReadable(target) {

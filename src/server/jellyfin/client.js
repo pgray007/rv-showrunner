@@ -194,6 +194,9 @@ function mapPath(jellyfinPath, config) {
 function normalizeItem(item, config) {
   const sourcePath = mapPath(item.Path, config);
   return {
+    id: item.Id,
+    sourceType: 'jellyfin',
+    sourceItemId: item.Id,
     jellyfinId: item.Id,
     title: item.Name,
     year: item.ProductionYear,

@@ -1,6 +1,6 @@
 'use strict';
 const cfg = require('../config');
-const jf = require('../jellyfin/client');
+const mediaSource = require('../media/source');
 const db = require('../db');
 
 const SORT_OPTIONS = {
@@ -9,17 +9,17 @@ const SORT_OPTIONS = {
 };
 
 async function routes(fastify) {
-  // Browse / search movies
-  fastify.get('/jellyfin/items', async (req) => {
+  async function listItems(req) {
     const { search, page = 1, limit = 40, tagState = 'all', sort = 'title', genre = '' } = req.query;
     const config = cfg.load();
+    const source = mediaSource.getActive(config);
     const filters = tagState === 'tagged'
       ? { tagFilter: config.rvTag }
       : tagState === 'untagged'
         ? { excludeTagFilter: config.rvTag }
         : {};
     const sortOption = SORT_OPTIONS[sort] || SORT_OPTIONS.title;
-    const { items, total } = await jf.getItems({
+    const { items, total } = await source.client.getItems({
       search,
       page: Number(page),
       limit: Number(limit),
@@ -29,47 +29,70 @@ async function routes(fastify) {
     });
 
     // Annotate with job status from DB
-    const jellyfinIds = items.map((i) => i.jellyfinId);
-    const jobRows = jellyfinIds.length
+    const itemIds = items.map(sourceItemId);
+    const jobRows = itemIds.length
       ? db.get()
-          .prepare(`SELECT jellyfin_id, status FROM jobs WHERE jellyfin_id IN (${jellyfinIds.map(() => '?').join(',')})`)
-          .all(...jellyfinIds)
+          .prepare(`SELECT source_item_id, jellyfin_id, status FROM jobs WHERE source_type=? AND source_item_id IN (${itemIds.map(() => '?').join(',')})`)
+          .all(source.type, ...itemIds)
       : [];
-    const jobMap = Object.fromEntries(jobRows.map((r) => [r.jellyfin_id, r.status]));
+    const jobMap = Object.fromEntries(jobRows.map((r) => [r.source_item_id || r.jellyfin_id, r.status]));
 
     return {
-      items: items.map((i) => ({ ...i, jobStatus: jobMap[i.jellyfinId] || null })),
+      sourceType: source.type,
+      sourceLabel: source.label,
+      items: items.map((i) => ({ ...i, jobStatus: jobMap[sourceItemId(i)] || null })),
       total,
       page: Number(page),
       limit: Number(limit),
     };
-  });
+  }
 
-  fastify.get('/jellyfin/genres', async () => jf.getGenres());
+  // Browse / search movies
+  fastify.get('/media/items', listItems);
+  fastify.get('/jellyfin/items', listItems);
+
+  async function listGenres() {
+    return mediaSource.getActive(cfg.load()).client.getGenres();
+  }
+
+  fastify.get('/media/genres', listGenres);
+  fastify.get('/jellyfin/genres', listGenres);
 
   // Add RV tag
-  fastify.post('/jellyfin/items/:id/tag', async (req, reply) => {
+  async function addTag(req, reply) {
     const config = cfg.load();
+    const source = mediaSource.getActive(config);
     try {
-      await jf.addTag(req.params.id, config.rvTag);
+      await source.client.addTag(req.params.id, config.rvTag);
       return { ok: true };
     } catch (err) {
-      fastify.log.error({ jellyfinId: req.params.id, err: err.message }, 'addTag failed');
+      fastify.log.error({ source: source.type, itemId: req.params.id, err: err.message }, 'addTag failed');
       return reply.code(502).send({ error: err.message });
     }
-  });
+  }
+
+  fastify.post('/media/items/:id/tag', addTag);
+  fastify.post('/jellyfin/items/:id/tag', addTag);
 
   // Remove RV tag
-  fastify.delete('/jellyfin/items/:id/tag', async (req, reply) => {
+  async function removeTag(req, reply) {
     const config = cfg.load();
+    const source = mediaSource.getActive(config);
     try {
-      await jf.removeTag(req.params.id, config.rvTag);
+      await source.client.removeTag(req.params.id, config.rvTag);
       return { ok: true };
     } catch (err) {
-      fastify.log.error({ jellyfinId: req.params.id, err: err.message }, 'removeTag failed');
+      fastify.log.error({ source: source.type, itemId: req.params.id, err: err.message }, 'removeTag failed');
       return reply.code(502).send({ error: err.message });
     }
-  });
+  }
+
+  fastify.delete('/media/items/:id/tag', removeTag);
+  fastify.delete('/jellyfin/items/:id/tag', removeTag);
+}
+
+function sourceItemId(item) {
+  return String(item.sourceItemId || item.id || item.jellyfinId);
 }
 
 module.exports = routes;

@@ -9,6 +9,8 @@ const SCHEMA = `
 CREATE TABLE IF NOT EXISTS jobs (
   id              TEXT PRIMARY KEY,
   jellyfin_id     TEXT NOT NULL UNIQUE,
+  source_type     TEXT NOT NULL DEFAULT 'jellyfin',
+  source_item_id  TEXT,
   title           TEXT NOT NULL,
   year            INTEGER,
   source_path     TEXT NOT NULL,
@@ -49,6 +51,8 @@ const MIGRATIONS = [
   ['started_at', 'ALTER TABLE jobs ADD COLUMN started_at INTEGER'],
   ['eta_seconds', 'ALTER TABLE jobs ADD COLUMN eta_seconds INTEGER'],
   ['transcode_info', 'ALTER TABLE jobs ADD COLUMN transcode_info TEXT'],
+  ['source_type', "ALTER TABLE jobs ADD COLUMN source_type TEXT NOT NULL DEFAULT 'jellyfin'"],
+  ['source_item_id', 'ALTER TABLE jobs ADD COLUMN source_item_id TEXT'],
 ];
 
 function init(configRoot) {
@@ -67,6 +71,9 @@ function migrate() {
   for (const [column, sql] of MIGRATIONS) {
     if (!columns.has(column)) db.exec(sql);
   }
+  db.exec("UPDATE jobs SET source_type='jellyfin' WHERE source_type IS NULL OR source_type=''");
+  db.exec('UPDATE jobs SET source_item_id=jellyfin_id WHERE source_item_id IS NULL');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_source_item ON jobs(source_type, source_item_id)');
 }
 
 function get() {
