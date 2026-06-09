@@ -5,6 +5,8 @@ const path = require('path');
 
 let db;
 
+// The legacy jellyfin_id column remains required for compatibility with
+// existing installs. New source-aware code uses source_type + source_item_id.
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS jobs (
   id              TEXT PRIMARY KEY,
@@ -62,6 +64,8 @@ function init(configRoot) {
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA foreign_keys = ON');
   db.exec(SCHEMA);
+  // CREATE TABLE handles fresh installs; migrate() brings older SQLite files
+  // forward without dropping user job history.
   migrate();
   return db;
 }
@@ -71,6 +75,8 @@ function migrate() {
   for (const [column, sql] of MIGRATIONS) {
     if (!columns.has(column)) db.exec(sql);
   }
+  // Backfill source columns for pre-Plex jobs and then enforce uniqueness for
+  // future source-aware inserts.
   db.exec("UPDATE jobs SET source_type='jellyfin' WHERE source_type IS NULL OR source_type=''");
   db.exec('UPDATE jobs SET source_item_id=jellyfin_id WHERE source_item_id IS NULL');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_source_item ON jobs(source_type, source_item_id)');

@@ -10,6 +10,8 @@ const CONFIG_ROOT = process.env.CONFIG_ROOT || DEV_DATA;
 const SETTINGS_PATH = path.join(CONFIG_ROOT, 'settings.json');
 const LEGACY_CONFIG_PATH = path.join(CONFIG_ROOT, 'config.json');
 
+// Only keys in this allowlist are written to disk. That keeps UI-only fields,
+// diagnostics payloads, and accidental request data out of persistent config.
 const PERSISTED_KEYS = new Set([
   'mediaSource',
   'jellyfinUrl',
@@ -54,10 +56,14 @@ const envDefaults = {
 
 function load() {
   const saved = readSaved();
+  // Saved settings override environment defaults so changes made in the web UI
+  // survive container restarts without needing env var changes.
   return { ...envDefaults, ...saved };
 }
 
 function readSaved() {
+  // settings.json is the current file; config.json is kept for upgrades from
+  // early releases that used the older name.
   for (const file of [SETTINGS_PATH, LEGACY_CONFIG_PATH]) {
     if (!fs.existsSync(file)) continue;
     try {
@@ -75,6 +81,8 @@ function sanitize(values) {
     if (PERSISTED_KEYS.has(key) && value !== undefined) clean[key] = value;
   }
   if (['qsv', 'qsvDerived', 'qsvViaVaapi'].includes(clean.hwAccel)) {
+    // Older configs used QSV names. The current encode path treats them as
+    // VAAPI because that is the supported Linux container path.
     clean.hwAccel = 'vaapi';
   }
   if (clean.mediaSource && !['jellyfin', 'plex'].includes(clean.mediaSource)) {

@@ -15,6 +15,7 @@ async function routes(fastify) {
     const rows = status && status !== 'all'
       ? db.get().prepare('SELECT * FROM jobs WHERE status=? ORDER BY updated_at DESC').all(status)
       : db.get().prepare('SELECT * FROM jobs ORDER BY updated_at DESC').all();
+    // Summaries always use all jobs so filtered views keep global queue totals.
     const summaryRows = status && status !== 'all'
       ? db.get().prepare('SELECT * FROM jobs ORDER BY updated_at DESC').all()
       : rows;
@@ -69,6 +70,8 @@ async function routes(fastify) {
 
     const emitter = queue.getLogEmitter();
     const handler = (entry) => send(entry);
+    // Each job has its own event name so multiple log streams can stay open
+    // without receiving unrelated ffmpeg output.
     emitter.on(`log:${jobId}`, handler);
 
     req.raw.on('close', () => {
@@ -190,6 +193,7 @@ function deleteOutputForJob(job) {
 }
 
 function summarizeJobs(rows) {
+  // Queue summaries drive the dashboard progress bar and ETA display.
   const active = rows.filter((job) => ['queued', 'transcoding'].includes(job.status));
   const complete = rows.filter((job) => job.status === 'complete');
   const total = active.length + complete.length;
@@ -227,6 +231,8 @@ function estimateQueuedSeconds(rows) {
 
   const secondsPerByte = estimateSecondsPerByte(rows);
   if (secondsPerByte) {
+    // Prefer a byte-weighted estimate when completed jobs have source sizes;
+    // fall back to average job duration for files without stat data.
     const sizedSeconds = queued
       .filter((job) => Number(job.source_size) > 0)
       .reduce((sum, job) => sum + (Number(job.source_size) * secondsPerByte), 0);
@@ -239,6 +245,8 @@ function estimateQueuedSeconds(rows) {
 }
 
 function estimateSecondsPerByte(rows) {
+  // Include completed jobs and in-flight jobs with enough progress to estimate
+  // a rough throughput for the current machine/profile mix.
   const samples = rows
     .filter((job) => job.status === 'complete' && job.started_at && job.completed_at && Number(job.source_size) > 0)
     .map((job) => ({
@@ -273,6 +281,8 @@ function estimateAverageJobSeconds(rows) {
 }
 
 function addRvReadySize(job) {
+  // Compute output size lazily so the jobs table does not need to be updated
+  // when files are deleted or modified outside the app.
   let rvReadySize = null;
   if (job.output_path) {
     try {
@@ -307,6 +317,7 @@ function getDirSize(dir) {
 function listOutputFiles(root) {
   if (!fs.existsSync(root)) return [];
   const results = [];
+  // Output is organized as Type/Title/file, matching media-library layouts.
   for (const type of fs.readdirSync(root, { withFileTypes: true })) {
     if (!type.isDirectory()) continue;
     const typeDir = path.join(root, type.name);

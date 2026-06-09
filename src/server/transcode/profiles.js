@@ -13,6 +13,8 @@ function defaultProfilesDir() {
 }
 
 function profileDirs() {
+  // Custom profiles live in /config and override bundled defaults with the
+  // same name, while still showing built-in metadata in the UI.
   return [...new Set([defaultProfilesDir(), profilesDir()])];
 }
 
@@ -27,6 +29,8 @@ function hasProfileInDir(dir, name) {
 function listProfiles() {
   const byName = new Map();
 
+  // Iterate defaults first and custom profiles second so user copies override
+  // built-ins without deleting the original shipped YAML.
   for (const dir of profileDirs()) {
     if (!fs.existsSync(dir)) continue;
     for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'))) {
@@ -66,6 +70,8 @@ function saveProfile(profile) {
   const customExists = hasProfileInDir(profilesDir(), clean.name);
   const builtinExists = hasProfileInDir(defaultProfilesDir(), clean.name);
   if (builtinExists && !customExists) {
+    // Force users to duplicate a built-in profile before editing so upgrades
+    // can safely refresh bundled defaults.
     throw new Error('Built-in profiles cannot be edited directly. Duplicate the profile first.');
   }
   const dir = profilesDir();
@@ -90,6 +96,8 @@ function deleteProfile(name) {
 
 function validateProfile(profile) {
   if (!profile || typeof profile !== 'object') throw new Error('Profile is required');
+  // Normalize and validate the full profile before writing YAML so the encoder
+  // path can assume required fields are present and typed.
   const clean = {
     name: String(profile.name || '').trim(),
     container: String(profile.container || 'mp4').trim(),

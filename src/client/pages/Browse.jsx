@@ -31,6 +31,8 @@ export default function Browse() {
   const searchTimeout = useRef(null);
 
   function load(q, p, f = filter, s = sort, g = genre) {
+    // Browse talks to source-neutral endpoints; the server decides whether
+    // Jellyfin or Plex is active.
     setLoading(true);
     setError(null);
     const params = new URLSearchParams({ page: p, limit: PAGE_SIZE });
@@ -64,6 +66,7 @@ export default function Browse() {
   function handleSearch(val) {
     setSearch(val);
     clearTimeout(searchTimeout.current);
+    // Debounce search so typing does not issue a request per keystroke.
     searchTimeout.current = setTimeout(() => {
       setPage(1);
       load(val, 1);
@@ -90,6 +93,8 @@ export default function Browse() {
 
   async function toggleTag(item) {
     const id = itemId(item);
+    // Track each item independently so one card can show a busy state without
+    // freezing the whole grid.
     setTagging((t) => ({ ...t, [id]: true }));
     try {
       if (item.hasRvTag) {
@@ -204,6 +209,8 @@ export default function Browse() {
 }
 
 function itemId(item) {
+  // sourceItemId is the current ID contract; fallbacks keep older responses
+  // and compatibility aliases working.
   return String(item.sourceItemId || item.id || item.jellyfinId);
 }
 
@@ -256,6 +263,7 @@ function MovieCard({ item, onSelect, onToggle, toggling }) {
 
 function MovieDetails({ item, onClose }) {
   useEffect(() => {
+    // Let keyboard users close the details modal without moving focus.
     function handleKeyDown(e) {
       if (e.key === 'Escape') onClose();
     }

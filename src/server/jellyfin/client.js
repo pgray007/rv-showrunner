@@ -3,6 +3,7 @@ const cfg = require('../config');
 
 let cachedUser = null;
 
+// Jellyfin accepts API keys through the MediaBrowser authorization header.
 function headers(config) {
   return {
     'Authorization': `MediaBrowser Token="${config.jellyfinApiKey}"`,
@@ -41,6 +42,8 @@ async function getFirstUserId(config) {
   const cacheKey = `${config.jellyfinUrl}|${config.jellyfinApiKey}`;
   if (cachedUser?.cacheKey === cacheKey) return cachedUser.id;
 
+  // Some item update endpoints are more reliable through a user-scoped path.
+  // Cache the first user per connection to avoid listing users for every tag.
   const users = await jellyfinFetch('/Users', {}, config);
   const userId = users?.[0]?.Id;
   if (!userId) throw new Error('No Jellyfin users available');
@@ -54,6 +57,8 @@ async function getFullItem(jellyfinId, config) {
     const userId = await getFirstUserId(config);
     return await jellyfinFetch(`/Users/${encodeURIComponent(userId)}/Items/${encodeURIComponent(jellyfinId)}`, {}, config);
   } catch (err) {
+    // Fall back to the server-level item list for installations where user
+    // scoped item lookup is unavailable with the configured key.
     const params = new URLSearchParams({ Ids: jellyfinId, Limit: '1' });
     const data = await jellyfinFetch(`/Items?${params}`, {}, config);
     const item = data.Items?.[0];
@@ -121,6 +126,8 @@ async function getTaggedItems() {
   const all = [];
   let start = 0;
   const limit = 100;
+  // Jellyfin paginates item searches; scan all pages so the scheduled worker
+  // sees every tagged movie, not just the first page.
   while (true) {
     const params = new URLSearchParams({
       IncludeItemTypes: 'Movie',
@@ -193,6 +200,8 @@ function mapPath(jellyfinPath, config) {
 
 function normalizeItem(item, config) {
   const sourcePath = mapPath(item.Path, config);
+  // Routes and UI consume this common shape for both Jellyfin and Plex.
+  // jellyfinId is retained as a compatibility alias for older client code.
   return {
     id: item.Id,
     sourceType: 'jellyfin',

@@ -18,7 +18,8 @@ async function routes(fastify) {
     const config = cfg.load();
     const checks = {};
 
-    // Active source connectivity
+    // Health is lightweight enough for container probes: quick remote source
+    // check, mount checks, GPU presence, and ffmpeg availability.
     try {
       const source = mediaSource.getActive(config);
       await source.client.testConnection(config, SOURCE_HEALTH_TIMEOUT_MS);
@@ -27,12 +28,10 @@ async function routes(fastify) {
       checks.source = { ok: false, reason: err.message };
     }
 
-    // Mount checks
     checks.media = checkMount(config.sourceMediaRoot, false);
     checks.output = checkMount(config.outputRoot, true);
     checks.cache = checkMount(config.cacheRoot, true);
 
-    // GPU
     const hardware = queue.getHardwareState();
     checks.gpu = {
       ok: config.hwAccel === 'none' || fs.existsSync(config.hwDevice),
@@ -42,7 +41,6 @@ async function routes(fastify) {
       reloadPending: hardware.reloadPending,
     };
 
-    // ffmpeg
     try {
       const { stdout } = await execFileAsync(config.ffmpegPath, ['-version'], {
         timeout: FFMPEG_HEALTH_TIMEOUT_MS,

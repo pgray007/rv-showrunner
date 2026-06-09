@@ -13,6 +13,7 @@ async function routes(fastify) {
     const { search, page = 1, limit = 40, tagState = 'all', sort = 'title', genre = '' } = req.query;
     const config = cfg.load();
     const source = mediaSource.getActive(config);
+    // Map UI filter names onto the active source's tag/label filters.
     const filters = tagState === 'tagged'
       ? { tagFilter: config.rvTag }
       : tagState === 'untagged'
@@ -28,7 +29,8 @@ async function routes(fastify) {
       ...filters,
     });
 
-    // Annotate with job status from DB
+    // Annotate source items with local job status so Browse can show whether a
+    // selected movie is queued, transcoding, complete, or failed.
     const itemIds = items.map(sourceItemId);
     const jobRows = itemIds.length
       ? db.get()
@@ -47,7 +49,8 @@ async function routes(fastify) {
     };
   }
 
-  // Browse / search movies
+  // New source-neutral routes power the UI; old /jellyfin routes stay as
+  // compatibility aliases for older clients and bookmarks.
   fastify.get('/media/items', listItems);
   fastify.get('/jellyfin/items', listItems);
 

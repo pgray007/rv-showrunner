@@ -84,6 +84,7 @@ export default function Queue() {
 
   function load() {
     const params = filter !== 'all' ? `?status=${filter}` : '';
+    // Polling keeps the queue useful even when no log panel is open.
     fetch(`/api/jobs${params}`).then((r) => r.json()).then((d) => {
       setJobs(d.jobs || []);
       setSummary(d.summary || null);
@@ -106,6 +107,8 @@ export default function Queue() {
     setLogs((l) => ({ ...l, [jobId]: [] }));
     if (sseRef.current) sseRef.current.close();
 
+    // Only one expanded job streams logs at a time. The server sends a snapshot
+    // first and then appends live ffmpeg/queue lines.
     const es = new EventSource(`/api/jobs/${jobId}/logs/stream`);
     sseRef.current = es;
     es.onmessage = (e) => {
@@ -159,6 +162,7 @@ export default function Queue() {
     setRefreshing(true);
     setRefreshResult(null);
     try {
+      // Manual refresh runs the same active-source scan as the background timer.
       const res = await fetch('/api/jobs/refresh', { method: 'POST' });
       const data = await res.json().catch(() => ({ ok: false, error: 'Invalid API response' }));
       setRefreshResult(data);
@@ -172,6 +176,8 @@ export default function Queue() {
     setPruning(true);
     setPruneResult(null);
     try {
+      // Keep enough recent lines for troubleshooting while preventing the
+      // SQLite log table from growing without bound.
       const res = await fetch('/api/jobs/logs/prune', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

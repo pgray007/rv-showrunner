@@ -26,6 +26,8 @@ function buildMovieNfo(item) {
     )
     .join('\n');
 
+  // Write a Kodi/Jellyfin-friendly movie.nfo next to the transcoded file so a
+  // disconnected media server can import metadata without internet access.
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
 <movie>
   <title>${escapeXml(item.title)}</title>
@@ -44,6 +46,8 @@ async function exportMovie(job, destDir, config) {
   const itemId = job.source_item_id || job.jellyfin_id;
   let itemData;
   try {
+    // Metadata comes from the currently active source because that source owns
+    // the selected tag/label and image URLs.
     itemData = await source.client.getItem(itemId);
   } catch (err) {
     logger.warn('metadata', `Could not fetch ${source.label} item data for ${itemId}`, err.message);

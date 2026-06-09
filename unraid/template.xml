@@ -1,18 +1,18 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>rv-showrunner</Name>
-  <Repository>rv-showrunner:latest</Repository>
-  <Registry/>
+  <Repository>ghcr.io/pgray007/rv-showrunner</Repository>
+  <Registry>https://ghcr.io</Registry>
   <Network>bridge</Network>
   <MyIP/>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
-  <Support/>
-  <Project/>
+  <Support>https://github.com/pgray007/rv-showrunner/discussions</Support>
+  <Project>https://github.com/pgray007/rv-showrunner</Project>
   <Overview>Transcodes Jellyfin-tagged or Plex-labeled media into RV-ready files for offline playback. Select movies via the web UI, they get transcoded and written to /rv-ready for Syncthing pickup.</Overview>
   <Category>MediaApp:Video</Category>
   <WebUI>http://[IP]:[PORT:3000]/</WebUI>
-  <TemplateURL/>
+  <TemplateURL>https://raw.githubusercontent.com/pgray007/rv-showrunner/main/unraid/template.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/pgray007/rv-showrunner/main/assets/icon.png</Icon>
   <ExtraParams>--device=/dev/dri:/dev/dri</ExtraParams>
   <PostArgs/>

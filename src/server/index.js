@@ -17,6 +17,8 @@ async function start() {
   const config = cfg.load();
   db.init(cfg.getConfigRoot());
 
+  // A crash can leave a job marked transcoding after the output file exists.
+  // Normalize those rows before restarting queue workers.
   normalizeCompletedJobs();
 
   // Reset any remaining jobs stuck in transcoding from a previous crash
@@ -61,6 +63,8 @@ async function start() {
   await fastify.listen({ port, host: '0.0.0.0' });
   logger.info('server', `rv-showrunner ${pkg.version} listening on :${port} (static: ${distExists ? 'yes' : 'no - dev mode'})`);
 
+  // Startup begins both the worker queue and a scan so newly tagged/labeled
+  // media is picked up without waiting for the first interval tick.
   queue.start(config.maxConcurrentTranscodes);
   scanner.start(config.scanIntervalMinutes);
   scanner.runNow();

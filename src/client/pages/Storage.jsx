@@ -26,6 +26,8 @@ export default function Storage() {
   }, []);
 
   async function deleteItem(item) {
+    // Deletion goes through the matching completed job so the database row and
+    // on-disk output are removed together.
     const job = await fetch(`/api/jobs?status=complete`).then((r) => r.json())
       .then((d) => d.jobs?.find((j) => j.output_path && j.output_path.startsWith(item.path)));
     if (!job) { alert('Could not find matching job to delete.'); return; }
@@ -43,6 +45,8 @@ export default function Storage() {
 
   const files = data.files || [];
   const totalSize = files.reduce((acc, f) => acc + (f.size || 0), 0);
+  // Prefer the server-reported recursive size; totalSize is kept for quick
+  // local sanity checks while rendering the list.
   const reported = data.bytesUsed || 0;
 
   return (

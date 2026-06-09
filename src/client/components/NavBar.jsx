@@ -13,6 +13,8 @@ export default function NavBar() {
   const [health, setHealth] = useState(null);
 
   useEffect(() => {
+    // Poll health periodically so hardware/source status changes show up
+    // without forcing a full page refresh.
     fetch('/health').then((r) => r.json()).then(setHealth).catch(() => {});
     const id = setInterval(() => {
       fetch('/health').then((r) => r.json()).then(setHealth).catch(() => {});

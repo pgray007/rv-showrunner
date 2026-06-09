@@ -6,6 +6,7 @@ import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
+    {/* BrowserRouter keeps the app shareable through direct page URLs. */}
     <BrowserRouter>
       <App />
     </BrowserRouter>

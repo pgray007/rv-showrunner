@@ -2,6 +2,7 @@
 const fs = require('fs');
 const cfg = require('../config');
 
+// Plex uses a token query parameter for both JSON metadata and image URLs.
 async function plexFetch(urlPath, options = {}, config = null, timeoutMs = 10000) {
   const c = config || cfg.load();
   if (!c.plexUrl) throw new Error('Plex URL not configured');
@@ -49,6 +50,7 @@ async function testConnection(config, timeoutMs = 10000) {
 async function getMovieSections(config) {
   const data = await plexFetch('/library/sections', {}, config);
   const directories = asArray(data.MediaContainer?.Directory);
+  // rv-showrunner currently transcodes movie libraries only.
   return directories.filter((section) => section.type === 'movie');
 }
 
@@ -64,6 +66,8 @@ async function getItems({
 } = {}) {
   const config = cfg.load();
   const all = [];
+  // Plex search/filter support varies by endpoint and server version. Load
+  // movie sections, normalize, then apply the app's filters consistently.
   for (const section of await getMovieSections(config)) {
     all.push(...await getSectionItems(section.key, config));
   }
@@ -94,6 +98,7 @@ async function getItems({
 async function getGenres() {
   const config = cfg.load();
   const names = new Set();
+  // Collect genres from all Plex movie sections into one dropdown list.
   for (const section of await getMovieSections(config)) {
     const data = await plexFetch(`/library/sections/${encodeURIComponent(section.key)}/genre`, {}, config);
     for (const genre of asArray(data.MediaContainer?.Directory)) {
@@ -140,6 +145,7 @@ async function editTags(itemId, tags) {
   tags.forEach((tag, index) => {
     params.set(`label[${index}].tag.tag`, tag);
   });
+  // Plex labels are edited through the generic metadata edit endpoint.
   await plexFetch(`/:/edit?${params}`, { method: 'PUT' }, config);
 }
 
@@ -181,6 +187,8 @@ function normalizeItem(item, config) {
   const sourcePath = mapPath(getMediaPath(item), config);
   const base = config.plexUrl?.replace(/\/+$/, '');
 
+  // Match the Jellyfin normalized contract so scanner, routes, Browse, and
+  // metadata export do not need Plex-specific conditionals.
   return {
     id,
     sourceType: 'plex',
@@ -210,6 +218,7 @@ function normalizeItem(item, config) {
 }
 
 function getMediaPath(item) {
+  // Plex stores the real file path on Media[].Part[].file.
   const media = asArray(item.Media)[0];
   const part = asArray(media?.Part)[0];
   return part?.file || item.Media?.Part?.file || null;
@@ -226,6 +235,7 @@ function mapPath(plexPath, config) {
 
 function providerIds(item) {
   const ids = {};
+  // Plex may expose provider IDs either as a primary guid or a Guid[] list.
   const guid = item.guid || '';
   const imdb = guid.match(/imdb:\/\/([^/?]+)/);
   const tmdb = guid.match(/tmdb:\/\/([^/?]+)/);

@@ -11,7 +11,8 @@ const pkg = require('../../../package.json');
 async function routes(fastify) {
   fastify.get('/settings', async () => {
     const config = cfg.load();
-    // Never expose the full API key — mask it for display
+    // Never expose full source credentials to the browser; return masked
+    // placeholders plus boolean flags so the UI can preserve saved secrets.
     return {
       ...config,
       jellyfinApiKey: config.jellyfinApiKey ? '***' + config.jellyfinApiKey.slice(-4) : '',
@@ -33,6 +34,8 @@ async function routes(fastify) {
     const hardwareChanged = previous.hwAccel !== updated.hwAccel ||
       previous.hwDevice !== updated.hwDevice ||
       previous.ffmpegPath !== updated.ffmpegPath;
+    // Hardware changes take effect immediately when idle; otherwise queue.js
+    // defers the probe until active transcodes finish.
     const hardwareReload = hardwareChanged
       ? await queue.reloadHardwareIfIdle()
       : { ok: true, deferred: false, unchanged: true, after: queue.getHardwareState() };
@@ -69,6 +72,8 @@ async function routes(fastify) {
     const config = cfg.load();
     const checks = {};
 
+    // Readiness checks intentionally exercise both filesystem permissions and
+    // remote media source access because Docker mount mistakes are common.
     checks.config = checkWritable(cfg.getConfigRoot());
     checks.cache = checkWritable(config.cacheRoot);
     checks.output = checkWritable(config.outputRoot);
@@ -143,6 +148,8 @@ async function routes(fastify) {
         hwDevice: config.hwDevice,
         ffmpegPath: config.ffmpegPath,
       });
+      // The diagnostics output is only a probe file; remove it even when ffmpeg
+      // leaves a partial artifact.
       try { fs.rmSync(outputPath, { force: true }); } catch {}
       if (!result.ok) return reply.code(502).send(result);
       return result;
@@ -182,6 +189,8 @@ async function routes(fastify) {
 function discoverHardwareDevices() {
   const root = '/dev/dri';
   if (!fs.existsSync(root)) return [];
+  // Prefer render nodes because those are the VAAPI devices containers usually
+  // need for non-display encode workloads.
   return fs.readdirSync(root)
     .filter((name) => /^renderD\d+$/.test(name))
     .sort()
@@ -230,6 +239,8 @@ function mergeTestConfig(config, body) {
 }
 
 function stripMaskedSecrets(clean) {
+  // Masked placeholders mean "keep the value already on disk"; deleting them
+  // prevents saving literal "***1234" as a token.
   if (clean.jellyfinApiKey && clean.jellyfinApiKey.startsWith('***')) delete clean.jellyfinApiKey;
   if (clean.plexToken && clean.plexToken.startsWith('***')) delete clean.plexToken;
   delete clean._hasApiKey;

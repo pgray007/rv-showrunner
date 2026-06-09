@@ -8,6 +8,8 @@ const SOURCES = {
   plex,
 };
 
+// Centralizes the "only one source is active" rule so routes, scanning, and
+// metadata export do not need Jellyfin/Plex branching of their own.
 function getActive(config = cfg.load()) {
   const type = config.mediaSource || 'jellyfin';
   const client = SOURCES[type];

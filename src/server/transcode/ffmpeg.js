@@ -9,6 +9,7 @@ const FILTER_PROBE_TIMEOUT_MS = 5000;
 const ffmpegFilterCache = new Map();
 
 const HW_MODES = {
+  // Hardware modes describe all ffmpeg flags that differ from software encode.
   vaapi: {
     label: 'Intel VAAPI',
     initArgs: (device) => ['-vaapi_device', device, '-hwaccel', 'vaapi', '-hwaccel_device', device, '-hwaccel_output_format', 'vaapi'],
@@ -46,6 +47,8 @@ function videoFilter(profile, hwAccel) {
 function tonemapFilter(profile) {
   const { maxWidth, maxHeight } = profile;
   const algorithm = profile.tonemapAlgorithm || 'hable';
+  // Software tonemapping converts HDR to linear light, applies the selected
+  // tone curve, then writes SDR bt709/yuv420p output.
   return [
     'zscale=t=linear:npl=100',
     'format=gbrpf32le',
@@ -137,6 +140,8 @@ function buildArgs(inputPath, outputPath, profile, hwAccel, hwDevice = DEFAULT_D
   args.push(...hwInitArgs(hwAccel, hwDevice));
   args.push('-i', inputPath);
 
+  // prepareTranscode() may disable hardware for a specific job when the chosen
+  // filters cannot run on the hardware path.
   args.push('-vf', videoFilterForDecision(profile, hwAccel, decisions));
 
   // Video codec
@@ -186,6 +191,8 @@ async function prepareTranscode(inputPath, profile, hwAccel, ffmpegPath) {
   try {
     media = await probeStreams(inputPath, ffmpegPath);
   } catch (err) {
+    // If probing fails, still transcode with conservative defaults rather than
+    // rejecting a job before ffmpeg gets a chance to process it.
     return {
       effectiveHwAccel: normalizeHwAccel(hwAccel),
       probeError: err.message,
@@ -208,6 +215,8 @@ async function prepareTranscode(inputPath, profile, hwAccel, ffmpegPath) {
   const tonemap = decideTonemap(video, profile);
   const normalizedHwAccel = normalizeHwAccel(hwAccel);
   const tonemapEngine = await chooseTonemapEngine(video, tonemap, normalizedHwAccel, ffmpegPath);
+  // VAAPI encode can stay enabled only if the selected tonemap engine also runs
+  // on VAAPI. Software filters require software frames.
   const effectiveHwAccel = tonemap.applied && tonemapEngine.engine !== 'vaapi' ? 'none' : normalizedHwAccel;
   return {
     effectiveHwAccel,
@@ -248,6 +257,7 @@ function run({ inputPath, outputPath, profile, hwAccel, hwDevice, ffmpegPath, on
 
     let progressBuffer = '';
     const handleProgress = (data) => {
+      // The -progress pipe emits key=value lines that can split across chunks.
       progressBuffer += data.toString();
       const lines = progressBuffer.split('\n');
       progressBuffer = lines.pop() || '';
@@ -260,6 +270,8 @@ function run({ inputPath, outputPath, profile, hwAccel, hwDevice, ffmpegPath, on
       if (Object.keys(update).length) onProgress?.(update);
     };
     const handleOutput = (data) => {
+      // stderr is both human-readable logging and a fallback source for
+      // duration/time values on ffmpeg builds with limited progress output.
       const lines = data.toString().split('\n').filter(Boolean);
       lines.forEach((line) => {
         onLog(line);
@@ -354,6 +366,8 @@ async function chooseTonemapEngine(video, tonemap, hwAccel, ffmpegPath) {
 
 function hasFfmpegFilter(ffmpegPath, filterName) {
   const cacheKey = `${ffmpegPath}:${filterName}`;
+  // Cache filter probes because `ffmpeg -filters` is relatively expensive and
+  // the result is stable for a running process.
   if (!ffmpegFilterCache.has(cacheKey)) {
     ffmpegFilterCache.set(cacheKey, probeFfmpegFilter(ffmpegPath, filterName));
   }
@@ -438,6 +452,8 @@ function selectAudioStream(streams, profile) {
   }
 
   const preferredLanguages = normalizeLanguageList(profile.preferredAudioLanguages || ['eng', 'en']);
+  // Smart selection prefers language/default tracks and avoids commentary or
+  // accessibility tracks unless every candidate looks undesirable.
   const candidates = audioStreams
     .filter((stream) => !(profile.ignoreCommentaryAudio !== false && isCommentaryAudio(stream)))
     .map((stream) => ({

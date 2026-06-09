@@ -11,6 +11,7 @@ let timer = null;
 let running = false;
 
 async function scan() {
+  // Prevent overlapping scans from racing on job insertion/deletion state.
   if (running) {
     logger.warn('scanner', 'Previous scan still running; skipping');
     return { ok: false, skipped: true, reason: 'scan already running' };
@@ -41,7 +42,7 @@ async function scanOnce() {
   let enqueued = 0;
   let deleted = 0;
 
-  // Upsert newly tagged items
+  // Upsert newly tagged/labeled items into the local transcode queue.
   for (const item of tagged) {
     if (!item.sourcePath) {
       logger.warn('scanner', `No source path for "${item.title}"; check ${source.label} media path mapping`);
@@ -63,6 +64,8 @@ async function scanOnce() {
       } catch {}
 
       const jobId = crypto.randomUUID();
+      // Keep jellyfin_id populated for older code/database compatibility while
+      // source_type/source_item_id becomes the real uniqueness key.
       const legacyId = source.type === 'jellyfin' ? itemId : `${source.type}:${itemId}`;
       db.get().prepare(`
         INSERT INTO jobs (id, jellyfin_id, source_type, source_item_id, title, year, source_path, profile, status, source_mtime, source_size)
@@ -76,7 +79,8 @@ async function scanOnce() {
     }
   }
 
-  // Handle items that lost their tag
+  // Only reconcile jobs for the active source. Switching from Jellyfin to Plex
+  // should not mark all Jellyfin jobs deleted.
   const tracked = db.get()
     .prepare("SELECT id, jellyfin_id, source_type, source_item_id, output_path FROM jobs WHERE source_type=? AND status NOT IN ('failed','skipped','deleted','cancelled')")
     .all(source.type);

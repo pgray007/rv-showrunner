@@ -3,12 +3,14 @@
 @tailwind utilities;
 
 @layer base {
+  /* App-wide dark surface baseline; page components add layout spacing. */
   body {
     @apply bg-surface text-gray-100 min-h-screen;
   }
 }
 
 @layer components {
+  /* Shared primitives keep page JSX dense without repeating Tailwind bundles. */
   .btn {
     @apply px-3 py-1.5 rounded text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-surface;
   }
@@ -34,7 +36,7 @@
   }
 }
 
-/* Scrollbar styling */
+/* Slim scrollbars match the compact dashboard layout. */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { @apply bg-border rounded; }

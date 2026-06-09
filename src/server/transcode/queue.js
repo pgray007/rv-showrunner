@@ -22,12 +22,14 @@ let reloadPending = false;
 const activeJobs = new Map();
 
 function onLog(jobId, line) {
+  // Persist logs for later review and emit them live to any open SSE clients.
   const ts = Math.floor(Date.now() / 1000);
   db.get().prepare('INSERT INTO job_logs (job_id, ts, line) VALUES (?, ?, ?)').run(jobId, ts, line);
   logEmitter.emit(`log:${jobId}`, { ts, line });
 }
 
 function setStatus(jobId, status, extra = {}) {
+  // Build updates dynamically so callers can change only the fields they own.
   const fields = ['status=?', 'updated_at=unixepoch()'];
   const values = [status];
   if ('error_log' in extra) { fields.push('error_log=?'); values.push(extra.error_log); }
@@ -73,6 +75,8 @@ async function processJob(job) {
     }
     const durationPromise = durationMs ? Promise.resolve(durationMs) : getDurationMs(job, config.ffmpegPath);
     if (!durationMs) {
+      // Do not block job startup indefinitely on ffprobe. A late duration result
+      // can still improve progress reporting while ffmpeg is already running.
       durationMs = await withTimeout(durationPromise, DURATION_PROBE_WAIT_MS, null);
       if (durationMs) {
         setStatus(job.id, 'transcoding', { duration_ms: durationMs, progress_ms: 0, progress_pct: 0, eta_seconds: null });
@@ -97,7 +101,7 @@ async function processJob(job) {
       signal: controller.signal,
     });
 
-    // Build final output path
+    // Build the final library-like output path expected by the mobile server.
     const safeName = `${job.title}${job.year ? ` (${job.year})` : ''}`;
     const finalDir = path.join(config.outputRoot, 'Movies', safeName);
     const finalFile = path.join(finalDir, `${safeName}.${profile.container}`);
@@ -136,6 +140,8 @@ async function getDurationMs(job, ffmpegPath) {
 }
 
 function updateProgress(jobId, progress, durationMs) {
+  // ffmpeg reports progress in several formats depending on version and stream;
+  // parse whatever is available and store a normalized millisecond value.
   const reportedDurationMs = parseDurationMs(progress);
   if (reportedDurationMs) setDurationIfTranscoding(jobId, reportedDurationMs);
   const outTimeMs = parseProgressMs(progress);
@@ -205,6 +211,7 @@ function moveFile(source, dest) {
   try {
     fs.renameSync(source, dest);
   } catch (err) {
+    // Cache and output may be on different mounts in Docker/Unraid.
     if (err.code !== 'EXDEV') throw err;
     fs.copyFileSync(source, dest);
     fs.unlinkSync(source);
@@ -212,6 +219,7 @@ function moveFile(source, dest) {
 }
 
 async function pump() {
+  // Pull queued jobs until the configured concurrency limit is reached.
   while (running < maxConcurrent) {
     const job = db.get()
       .prepare("SELECT * FROM jobs WHERE status='queued' ORDER BY created_at ASC LIMIT 1")
@@ -231,6 +239,8 @@ async function pump() {
 
 async function probeAndStart() {
   const config = cfg.load();
+  // Hardware availability can change when users edit settings or container
+  // device mounts, so probe before starting queued jobs.
   const result = await ffmpeg.probeHwAccel(config.hwAccel, config.ffmpegPath, config.hwDevice);
   if (result.available) {
     hwAccelMode = result.mode;

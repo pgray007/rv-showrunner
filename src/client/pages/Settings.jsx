@@ -41,6 +41,8 @@ export default function Settings() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
+    // Load settings and diagnostics together so controls can render with the
+    // current persisted config and available hardware devices.
     Promise.all([
       fetch('/api/settings').then((r) => r.json()),
       fetch('/api/profiles').then((r) => r.json()),
@@ -71,6 +73,7 @@ export default function Settings() {
   }
 
   function draftFromProfile(profile, name = profile?.name || '') {
+    // Strip server-only metadata before sending profile drafts back to the API.
     return {
       ...BLANK_PROFILE,
       ...profile,
@@ -121,6 +124,7 @@ export default function Settings() {
       const data = await res.json().catch(() => ({ error: 'Invalid API response' }));
       if (!res.ok) throw new Error(data.error || 'Profile save failed');
       await refreshProfiles();
+      // Newly created or duplicated profiles become the selected default.
       field('transcodeProfile', data.profile?.name || profileDraft.name);
       setProfileMode('edit');
       setProfileDraft(draftFromProfile(data.profile || profileDraft));
@@ -142,6 +146,7 @@ export default function Settings() {
       if (!res.ok) throw new Error(data.error || 'Profile delete failed');
       const nextProfiles = await refreshProfiles();
       if (config.transcodeProfile === profile.name) {
+        // Avoid leaving config pointed at a profile that no longer exists.
         field('transcodeProfile', nextProfiles[0]?.name || '');
       }
       setProfileDraft(null);
@@ -179,6 +184,7 @@ export default function Settings() {
       const data = await res.json().catch(() => null);
       if (data?.config) setConfig(data.config);
       if (data?.hardwareReload) {
+        // Hardware probes can be immediate or deferred depending on active jobs.
         setHardwareReload(data.hardwareReload);
         setHardwareState(data.hardwareReload.after || data.hardwareReload.before || hardwareState);
       }
@@ -193,6 +199,8 @@ export default function Settings() {
     setTesting(true);
     setTestResult(null);
     try {
+      // Send only the active source credentials. Masked values are omitted so
+      // the server can test with already-saved secrets.
       const payload = config.mediaSource === 'plex'
         ? {
             mediaSource: 'plex',
