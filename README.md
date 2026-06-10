@@ -1,9 +1,9 @@
 # rv-showrunner
 
-[![Build & Publish Docker Image](https://github.com/pgray007/rv-showrunner/actions/workflows/publish.yml/badge.svg)](https://github.com/pgray007/rv-showrunner/actions/workflows/publish.yml)
-[![GitHub release](https://img.shields.io/github/v/release/pgray007/rv-showrunner)](https://github.com/pgray007/rv-showrunner/releases)
-[![License](https://img.shields.io/github/license/pgray007/rv-showrunner)](LICENSE)
-[![GHCR](https://img.shields.io/badge/ghcr.io-pgray007%2Frv--showrunner-blue)](https://ghcr.io/pgray007/rv-showrunner)
+[![Build & Publish Docker Image](https://github.com/lowgatelabs/rv-showrunner/actions/workflows/publish.yml/badge.svg)](https://github.com/lowgatelabs/rv-showrunner/actions/workflows/publish.yml)
+[![GitHub release](https://img.shields.io/github/v/release/lowgatelabs/rv-showrunner)](https://github.com/lowgatelabs/rv-showrunner/releases)
+[![License](https://img.shields.io/github/license/lowgatelabs/rv-showrunner)](LICENSE)
+[![GHCR](https://img.shields.io/badge/ghcr.io-lowgatelabs%2Frv--showrunner-blue)](https://ghcr.io/lowgatelabs/rv-showrunner)
 
 rv-showrunner prepares media for a disconnected mobile media server. It is built for setups like an RV, camper, boat, cabin, or any other place where you want your media library to keep working when internet access is slow, metered, or unavailable.
 
@@ -27,19 +27,20 @@ The app connects to Jellyfin or Plex, watches for media tagged for RV sync, tran
 ![Settings](assets/screenshots/transcode_settings.png)
 *Configure sync behavior, transcode profiles, and hardware acceleration — all from the web UI.*
 
-## Intended RV Setup
+## Intended RV (or other vehicle) Setup
 
-rv-showrunner is intended to be one part of a larger disconnected media setup:
+rv-showrunner is intended to be one part of a larger disconnected media setup in your RV, boat, car, Gulfstream, submarine, or anywhere you might want to watch a movie without reliable fast connectivity:
 
 1. A home media server running Jellyfin or Plex with access to your main media library.
 2. rv-showrunner running near that library, usually on the same Docker host or Unraid server.
 3. Syncthing syncing rv-showrunner's finished `/rv-ready` output to a mobile device.
-4. A mobile Jellyfin server, recommended on a Raspberry Pi or similar low-power computer.
-5. A travel router, such as a GL.iNet router, configured as the RV network.
+4. A mobile Jellyfin server, recommended on a Raspberry Pi or similar low-power computer with appropriate storage (an old SSD or USB drive works well here).
+5. A travel router, such as a GL.iNet router, configured as the RV network wirless network.
+6. A tv in your RV (obvi). I use a Roku TV with the native Jellyfin app, but you could connect a "dumb" tv directly to your Pi for media playback.
 
-With a router that supports multiple WiFi WAN connections, the RV can connect to your home WiFi while parked in the driveway. Syncthing can then copy newly prepared media onto the mobile server automatically. Once you leave, the RV media server keeps running locally without internet access.
+With a router that supports multiple WiFi WAN connections, the RV will connect to your home WiFi while parked in the driveway. Syncthing will then copy newly prepared media onto the mobile server automatically. Once you leave, the RV media server keeps running locally without internet access.
 
-This creates a "sync in the driveway, watch offline on the road" workflow.
+This creates a "sync in the driveway, watch offline on the road" workflow that all runs automatically once properly setup.
 
 ## Requirements
 
@@ -58,7 +59,7 @@ Replace paths with locations from your host. The source media mount should match
 ```yaml
 services:
   rv-showrunner:
-    image: ghcr.io/pgray007/rv-showrunner:latest
+    image: ghcr.io/lowgatelabs/rv-showrunner:latest
     container_name: rv-showrunner
     restart: unless-stopped
     ports:
@@ -104,17 +105,9 @@ Then open:
 http://your-server-ip:3000
 ```
 
-Use `:edge` instead of `:latest` to track the latest development build from the `main` branch.
+Use `:edge` instead of `:latest` to track the latest development build from the `main` branch. WARNING: this build is not fully tested and will possibly/probably be broken at some point!
 
 ## Unraid Community Applications Install
-
-> **Note:** CA listing is pending approval. In the meantime, install manually using the template URL below or via Docker Compose above.
->
-> Template URL: `https://raw.githubusercontent.com/pgray007/rv-showrunner/main/unraid/template.xml`
->
-> To install manually: Unraid → Docker → Add Container → scroll down and paste the template URL into the **Template URL** field.
-
-Once listed in CA:
 
 1. Open Unraid's **Apps** tab.
 2. Search for `rv-showrunner`.
@@ -124,7 +117,7 @@ Once listed in CA:
    - **Media**: read-only mount for your source media.
    - **RV Ready Output**: completed files for Syncthing.
    - **Cache / Working Dir**: temporary working space for transcodes.
-5. Choose one active source, Jellyfin or Plex, and set its connection values:
+5. Choose one active source, Jellyfin or Plex, and set its connection values (or enter these later in the web interface once rv-showrunner is up and running):
    - **Media Source**
    - **Jellyfin URL**, **Jellyfin API Key**, and **Jellyfin Media Path**
    - or **Plex URL**, **Plex Token**, and **Plex Media Path**
@@ -162,6 +155,8 @@ A typical layout:
 - Mobile server receive path: a media folder scanned by mobile Jellyfin
 
 On the mobile Jellyfin server, add the Syncthing receive folder as a Jellyfin library. Once files arrive, Jellyfin can scan and serve them locally on the RV network.
+
+For more information about Syncthing (it's free/open source), check out: https://syncthing.net.
 
 ## Configuration
 
@@ -216,7 +211,7 @@ Software transcoding is slower but does not require GPU device passthrough.
 
 ## Mobile Server Notes
 
-Jellyfin is recommended for the mobile server because it works well on a Raspberry Pi or similar small computer and can serve clients entirely over a local RV network.
+Jellyfin is recommended for the mobile server because it works well on a Raspberry Pi or similar small computer and can serve clients entirely over a local RV network while Plex tends to get grumpy if it can't connect to the internet.
 
 A GL.iNet-style router is useful because it can:
 
@@ -224,5 +219,7 @@ A GL.iNet-style router is useful because it can:
 - Join campground, hotspot, or home WiFi as WAN.
 - Support multiple WiFi WAN profiles.
 - Let the mobile server and clients keep the same local addresses.
+
+Here's the router I use: https://amzn.to/4aoNPXv
 
 That means the RV media stack behaves the same whether it is connected at home, connected through a hotspot, or fully offline.
