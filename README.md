@@ -1,5 +1,10 @@
 # rv-showrunner
 
+[![Build & Publish Docker Image](https://github.com/pgray007/rv-showrunner/actions/workflows/publish.yml/badge.svg)](https://github.com/pgray007/rv-showrunner/actions/workflows/publish.yml)
+[![GitHub release](https://img.shields.io/github/v/release/pgray007/rv-showrunner)](https://github.com/pgray007/rv-showrunner/releases)
+[![License](https://img.shields.io/github/license/pgray007/rv-showrunner)](LICENSE)
+[![GHCR](https://img.shields.io/badge/ghcr.io-pgray007%2Frv--showrunner-blue)](https://ghcr.io/pgray007/rv-showrunner)
+
 rv-showrunner prepares media for a disconnected mobile media server. It is built for setups like an RV, camper, boat, cabin, or any other place where you want your media library to keep working when internet access is slow, metered, or unavailable.
 
 The app connects to Jellyfin or Plex, watches for media tagged for RV sync, transcodes those files into a smaller device-friendly format, and writes the finished files to an output folder that can be synced to a mobile server with Syncthing.
@@ -13,6 +18,14 @@ The app connects to Jellyfin or Plex, watches for media tagged for RV sync, tran
 - Uses `/cache` as a working directory for in-progress transcodes.
 - Supports Intel VAAPI hardware acceleration via `/dev/dri`.
 - Provides a web UI for queue status, settings, storage, logs, and diagnostics.
+
+## Screenshots
+
+![Browse Movies](assets/screenshots/browse.png)
+*Browse your Jellyfin or Plex library, filter by tagged/untagged, and queue movies for the RV with one click.*
+
+![Settings](assets/screenshots/transcode_settings.png)
+*Configure sync behavior, transcode profiles, and hardware acceleration — all from the web UI.*
 
 ## Intended RV Setup
 
@@ -38,14 +51,14 @@ This creates a "sync in the driveway, watch offline on the road" workflow.
 - Enough cache space for active transcodes.
 - Optional but recommended: Intel Quick Sync / VAAPI support exposed through `/dev/dri`.
 
-## Docker Hub Install
+## Docker Install
 
 Replace paths with locations from your host. The source media mount should match the path your selected media server reports for files through `JELLYFIN_MEDIA_PATH` or `PLEX_MEDIA_PATH`.
 
 ```yaml
 services:
   rv-showrunner:
-    image: pgray007/rv-showrunner:latest
+    image: ghcr.io/pgray007/rv-showrunner:latest
     container_name: rv-showrunner
     restart: unless-stopped
     ports:
@@ -91,9 +104,17 @@ Then open:
 http://your-server-ip:3000
 ```
 
-If your Docker Hub image is published under a different namespace, change `pgray007/rv-showrunner:latest` to the correct image.
+Use `:edge` instead of `:latest` to track the latest development build from the `main` branch.
 
 ## Unraid Community Applications Install
+
+> **Note:** CA listing is pending approval. In the meantime, install manually using the template URL below or via Docker Compose above.
+>
+> Template URL: `https://raw.githubusercontent.com/pgray007/rv-showrunner/main/unraid/template.xml`
+>
+> To install manually: Unraid → Docker → Add Container → scroll down and paste the template URL into the **Template URL** field.
+
+Once listed in CA:
 
 1. Open Unraid's **Apps** tab.
 2. Search for `rv-showrunner`.
